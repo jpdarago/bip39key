@@ -6,3 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0"
+byteorder = "1.4.3"
+ed25519-dalek = "1.0.1"
+sha2 = "0.10.2"
+tiny-bip39 = "0.8.2"
