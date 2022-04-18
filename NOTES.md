@@ -33,9 +33,40 @@ _Output_
     * Option 1: https://docs.rs/ed25519-dalek/latest/ed25519_dalek.
     * Option 2: Implement [RFC 8032](https://www.rfc-editor.org/rfc/rfc8032.html).
 	* [Golang implementation](https://cs.opensource.google/go/go/+/refs/tags/go1.18.1:src/crypto/ed25519/ed25519.go;drc=b0c49ae9f59d233526f8934262c5bbbe14d4358d;l=123)
-	* Requires SHA512 and fixed base scalar multiplication by the `B` generator.
+	* Requires SHA512 and fixed base scalar multiplication by the `B` generator of ED25519.
 
 ```
+------------------------------------------------------------------------------
+5.1.  Ed25519ph, Ed25519ctx, and Ed25519
+
+   Ed25519 is EdDSA instantiated with:
+
+   +-----------+-------------------------------------------------------+
+   | Parameter | Value                                                 |
+   +-----------+-------------------------------------------------------+
+   |     p     | p of edwards25519 in [RFC7748] (i.e., 2^255 - 19)     |
+   |     b     | 256                                                   |
+   |  encoding | 255-bit little-endian encoding of {0, 1, ..., p-1}    |
+   |  of GF(p) |                                                       |
+   |    H(x)   | SHA-512(dom2(phflag,context)||x) [RFC6234]            |
+   |     c     | base 2 logarithm of cofactor of edwards25519 in       |
+   |           | [RFC7748] (i.e., 3)                                   |
+   |     n     | 254                                                   |
+   |     d     | d of edwards25519 in [RFC7748] (i.e., -121665/121666  |
+   |           | = 370957059346694393431380835087545651895421138798432 |
+   |           | 19016388785533085940283555)                           |
+   |     a     | -1                                                    |
+   |     B     | (X(P),Y(P)) of edwards25519 in [RFC7748] (i.e., (1511 |
+   |           | 22213495354007725011514095885315114540126930418572060 |
+   |           | 46113283949847762202, 4631683569492647816942839400347 |
+   |           | 5163141307993866256225615783033603165251855960))      |
+   |     L     | order of edwards25519 in [RFC7748] (i.e.,             |
+   |           | 2^252+27742317777372353535851937790883648493).        |
+   |   PH(x)   | x (i.e., the identity function)                       |
+   +-----------+-------------------------------------------------------+
+
+                      Table 1: Parameters of Ed25519
+
 ------------------------------------------------------------------------------
 5.1.5.  Key Generation
 
@@ -67,9 +98,15 @@ _Output_
 ------------------------------------------------------------------------------
 ```
 
+Fixed scalar multiplication
+
 5. Output the corresponding PGP packets.
 
 * Secret key packet.
+    * Tag: 5
+    * Type 4.
+    * Algo 22.
+    * OID 0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01
 * User ID packet, tag 13, eith the ID.
 * Signature packet.
 
@@ -78,7 +115,7 @@ _Output_
 
 ## PGP key Examples
 
-### Example List Packets for a throwaway Curve 25519 key without password.
+### Packets for a throwaway Curve25519 key without password.
 
 ```
 # off=0 ctb=94 tag=5 hlen=2 plen=88
@@ -108,7 +145,7 @@ _Output_
         data: [256 bits]
 ```
 
-### Example List Packets for a throwaway Curve 25519 (ED25519) key with password.
+### Packets for a throwaway Curve25519 key with password.
 
 ```
 # off=0 ctb=94 tag=5 hlen=2 plen=134
@@ -158,6 +195,55 @@ _Output_
         hashed subpkt 27 len 1 (key flags: 0C)
         subpkt 16 len 8 (issuer key ID 17BA2C6E2EC68D55)
         data: [256 bits]
+        data: [256 bits]
+```
+
+### Packets for a throwaway Curve25519 key without password with Sign and Encryption
+
+```
+# off=0 ctb=94 tag=5 hlen=2 plen=88
+:secret key packet:
+        version 4, algo 22, created 1650302227, expires 0
+        pkey[0]: [80 bits] ed25519 (1.3.6.1.4.1.11591.15.1)
+        pkey[1]: [263 bits]
+        skey[2]: [255 bits]
+        checksum: 1172
+        keyid: E30A73DD1E2A2221
+# off=90 ctb=b4 tag=13 hlen=2 plen=49
+:user ID packet: "Hiro Protagonist <hiro.protagonist@snowcrash.com>"
+# off=141 ctb=88 tag=2 hlen=2 plen=144
+:signature packet: algo 22, keyid E30A73DD1E2A2221
+        version 4, created 1650302227, md5len 0, sigclass 0x13
+        digest algo 8, begin of digest 17 d2
+        hashed subpkt 33 len 21 (issuer fpr v4 8452DD0EBC3B93F4BA0DA799E30A73DD1E2A2221)
+        hashed subpkt 2 len 4 (sig created 2022-04-18)
+        hashed subpkt 27 len 1 (key flags: 03)
+        hashed subpkt 11 len 4 (pref-sym-algos: 9 8 7 2)
+        hashed subpkt 21 len 5 (pref-hash-algos: 10 9 8 11 2)
+        hashed subpkt 22 len 3 (pref-zip-algos: 2 3 1)
+        hashed subpkt 30 len 1 (features: 01)
+        hashed subpkt 23 len 1 (keyserver preferences: 80)
+        subpkt 16 len 8 (issuer key ID E30A73DD1E2A2221)
+        data: [256 bits]
+        data: [254 bits]
+# off=287 ctb=9c tag=7 hlen=2 plen=93
+:secret sub key packet:
+        version 4, algo 18, created 1650302227, expires 0
+        pkey[0]: [88 bits] cv25519 (1.3.6.1.4.1.3029.1.5.1)
+        pkey[1]: [263 bits]
+        pkey[2]: [32 bits]
+        skey[3]: [255 bits]
+        checksum: 127b
+        keyid: E39E6C571BA2E59E
+# off=382 ctb=88 tag=2 hlen=2 plen=120
+:signature packet: algo 22, keyid E30A73DD1E2A2221
+        version 4, created 1650302227, md5len 0, sigclass 0x18
+        digest algo 8, begin of digest 56 11
+        hashed subpkt 33 len 21 (issuer fpr v4 8452DD0EBC3B93F4BA0DA799E30A73DD1E2A2221)
+        hashed subpkt 2 len 4 (sig created 2022-04-18)
+        hashed subpkt 27 len 1 (key flags: 0C)
+        subpkt 16 len 8 (issuer key ID E30A73DD1E2A2221)
+        data: [255 bits]
         data: [256 bits]
 ```
 
