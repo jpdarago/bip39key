@@ -59,9 +59,9 @@ fn mpi_encode(data: &[u8]) -> Vec<u8> {
 fn checksum(buffer: &[u8]) -> u16 {
     let mut result = 0;
     for &byte in buffer {
-        result += byte as u16;
+        result = (result + byte) % 65536;
     }
-    result
+    result as u16
 }
 
 impl PGPSignKey {
@@ -288,15 +288,6 @@ impl PGPBuffer {
             .sign_key
             .bind_key_as_packet(&self.context.encrypt_key, &mut self.buffer);
         if let Err(err) = out.write(&self.buffer.get_ref()) {
-            Err(Box::new(err))
-        } else {
-            Ok(())
-        }
-    }
-
-    fn output_byte(self: &mut Self, val: u8) -> Result<()> {
-        let buf: [u8; 1] = [val];
-        if let Err(err) = self.buffer.write_all(&buf) {
             Err(Box::new(err))
         } else {
             Ok(())
