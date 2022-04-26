@@ -1,6 +1,6 @@
-use bip39::{Language, Mnemonic, Seed};
+use bip39::{Language, Mnemonic};
 use byteorder::{BigEndian, WriteBytesExt};
-use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signature, Signer};
+use ed25519_dalek::{Keypair, PublicKey, SecretKey, Signer};
 use sha1::Sha1;
 use sha2::Digest;
 use sha2::{Sha256, Sha512};
@@ -48,7 +48,7 @@ fn mpi_encode(data: &[u8]) -> Vec<u8> {
         return vec![0, 0];
     }
     let mut vec = Vec::with_capacity(slice.len() + 2);
-    let c = data.len() * 8 - (slice[0].leading_zeros() as usize);
+    let c = slice.len() * 8 - (slice[0].leading_zeros() as usize);
     vec.push(((c >> 8) & 0xFF) as u8);
     vec.push((c & 0xFF) as u8);
     vec.extend_from_slice(slice);
@@ -57,9 +57,9 @@ fn mpi_encode(data: &[u8]) -> Vec<u8> {
 
 // Returns the PGP checksum for a data buffer, defined in OpenPGP RFC 4880.
 fn checksum(buffer: &[u8]) -> u16 {
-    let mut result = 0;
+    let mut result: u32 = 0;
     for &byte in buffer {
-        result = (result + byte) % 65536;
+        result = (result + (byte as u32)) % 65536;
     }
     result as u16
 }
@@ -74,10 +74,13 @@ impl PGPSignKey {
         cursor.write(&[0])?;
         cursor.write(&[0x04])?; // Version 4.
         cursor.write_u32::<BigEndian>(self.created_timestamp_secs.try_into()?)?;
-        cursor.write(&[0x22])?; // Algorithm, EdDSA
+        cursor.write(&[22])?; // Algorithm, EdDSA
         let oid: [u8; 9] = [0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01]; // EdDSA OID
         cursor.write(&[oid.len().try_into()?])?;
+        cursor.write(&oid);
+        // 263 bits: 7 bits for 0x40 prefix byte and 32 bytes for public key.
         cursor.write_u16::<BigEndian>(263)?;
+        // Prefix octet for EdDSA Point Format.
         cursor.write(&[0x40])?;
         cursor.write(self.keypair.public.as_bytes())?;
         let data = cursor.get_mut();
@@ -88,7 +91,7 @@ impl PGPSignKey {
         Ok(())
     }
 
-    fn private_as_packet(self: Self, out: &mut ByteCursor) -> Result<()> {
+    fn secret_as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
         let mut cursor = Cursor::new(Vec::with_capacity(256));
         self.public_as_packet(&mut cursor)?;
         // S2K unencrypted i.e. without passphrase protection.
@@ -106,32 +109,32 @@ impl PGPSignKey {
         Ok(())
     }
 
-    fn keyid(self: Self) -> Result<Vec<u8>> {
+    fn keyid(self: &Self) -> Result<Vec<u8>> {
         let mut hasher = Sha1::new();
         let mut cursor = Cursor::new(Vec::with_capacity(256));
         self.public_as_packet(&mut cursor)?;
         let packet = cursor.get_ref();
         let without_header = &packet[2..];
         hasher.update(&[0x99, 0, without_header.len() as u8]);
-        hasher.update(&without_header[2..]);
+        hasher.update(&without_header);
         let hash = hasher.finalize();
         Ok(hash[12..20].to_vec())
     }
 
-    fn self_sign_as_packet(self: Self, user_id: &PGPUserId, out: &mut ByteCursor) -> Result<()> {
+    fn self_sign_as_packet(self: &Self, user_id: &PGPUserId, out: &mut ByteCursor) -> Result<()> {
         let mut packet_cursor = Cursor::new(Vec::with_capacity(256));
         // Signature Packet Header (2), Version 4.
         // Positive certification signature (0x13).
         // EdDSA signature (22), SHA-256 hash (8).
-        packet_cursor.write(&[0xc0 | 2, 0x04, 0x18, 22, 8]);
+        packet_cursor.write(&[0xc0 | 2, 0x04, 0x18, 22, 8])?;
         // Write subpackets to a buffer.
         // Signature creation time subpacket (2), 5 bytes.
         let mut subpacket_cursor = Cursor::new(Vec::with_capacity(256));
         subpacket_cursor.write(&[2, 5])?;
-        subpacket_cursor.write_u32::<BigEndian>(self.created_timestamp_secs);
+        subpacket_cursor.write_u32::<BigEndian>(self.created_timestamp_secs)?;
         // Issuer subpacket (16), signature key id.
         let keyid = self.keyid()?;
-        subpacket_cursor.write(&[9, 16]);
+        subpacket_cursor.write(&[9, 16])?;
         subpacket_cursor.write(&keyid)?;
         // Key Flags (27) subpacket (sign and certify).
         subpacket_cursor.write(&[27, 0x03])?;
@@ -169,7 +172,7 @@ impl PGPSignKey {
         Ok(())
     }
 
-    fn bind_key_as_packet(self: Self, subkey: &PGPEncryptKey, out: &mut ByteCursor) -> Result<()> {
+    fn bind_key_as_packet(self: &Self, subkey: &PGPEncryptKey, out: &mut ByteCursor) -> Result<()> {
         let mut packet_cursor = Cursor::new(Vec::with_capacity(256));
         // Signature Packet Header (2), Version 4.
         // Subkey binding signature (0x18).
@@ -243,7 +246,7 @@ impl PGPEncryptKey {
         Ok(())
     }
 
-    fn private_as_packet(self: Self, out: &mut ByteCursor) -> Result<()> {
+    fn secret_as_packet(self: Self, out: &mut ByteCursor) -> Result<()> {
         let mut cursor = Cursor::new(Vec::with_capacity(256));
         self.public_as_packet(&mut cursor)?;
         // S2K unencrypted i.e. without passphrase protection.
@@ -268,74 +271,81 @@ struct PGPContext {
     encrypt_key: PGPEncryptKey,
 }
 
-struct PGPBuffer {
-    context: PGPContext,
-    buffer: ByteCursor,
-}
-
-impl PGPBuffer {
-    fn output<W: Write>(self: &mut Self, mut out: BufWriter<W>) -> Result<()> {
-        // Write user id.
-        self.context.user_id.as_packet(&mut self.buffer)?;
-        self.context.sign_key.public_as_packet(&mut self.buffer)?;
-        self.context
-            .encrypt_key
-            .public_as_packet(&mut self.buffer)?;
-        self.context
-            .sign_key
-            .self_sign_as_packet(&self.context.user_id, &mut self.buffer);
-        self.context
-            .sign_key
-            .bind_key_as_packet(&self.context.encrypt_key, &mut self.buffer);
-        if let Err(err) = out.write(&self.buffer.get_ref()) {
-            Err(Box::new(err))
-        } else {
-            Ok(())
-        }
+fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> Result<()> {
+    let mut buffer = Cursor::new(Vec::new());
+    // Write user id.
+    context.user_id.as_packet(&mut buffer)?;
+    context.sign_key.public_as_packet(&mut buffer)?;
+    context.encrypt_key.public_as_packet(&mut buffer)?;
+    context
+        .sign_key
+        .self_sign_as_packet(&context.user_id, &mut buffer)?;
+    context
+        .sign_key
+        .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
+    if let Err(err) = out.write(&buffer.get_ref()) {
+        Err(Box::new(err))
+    } else {
+        Ok(())
     }
 }
 
-fn main() -> Result<()> {
-    print!("Please input the RFC 2822 User ID");
-    let mut user_id = String::new();
-    std::io::stdin().read_line(&mut user_id)?;
-    println!("Please input the BIP 39 words separated by spaces:");
-    // Convert BIP39 passphrase to seed.
-    let mut phrase = String::new();
-    std::io::stdin().read_line(&mut phrase)?;
-    let mnemonic = Mnemonic::from_phrase(&phrase, Language::English)?;
-    // We assume the mnemonic is not password protected.
-    let seed = Seed::new(&mnemonic, "");
+fn build_keys(user_id: &str, seed: &str) -> Result<PGPContext> {
     // Derive 64 bytes (32 for sign key, 32 for encryption key) from the bytes.
     let mut hasher = Sha512::new();
-    hasher.update(seed.as_bytes());
+    hasher.update(&seed);
     // Build PGP context from the 64 bytes.
-    let private_key_bytes = hasher.finalize();
-    let sign_private_key = SecretKey::from_bytes(&private_key_bytes[..32])?;
-    let sign_public_key: PublicKey = (&sign_private_key).into();
-    let encrypt_private_key = SecretKey::from_bytes(&private_key_bytes[32..])?;
-    let encrypt_public_key: PublicKey = (&sign_private_key).into();
-    let context = PGPContext {
-        user_id: PGPUserId { user_id },
+    let secret_key_bytes = hasher.finalize();
+    let sign_secret_key = SecretKey::from_bytes(&secret_key_bytes[..32])?;
+    let sign_public_key: PublicKey = (&sign_secret_key).into();
+    let encrypt_secret_key = SecretKey::from_bytes(&secret_key_bytes[32..])?;
+    let encrypt_public_key: PublicKey = (&encrypt_secret_key).into();
+    Ok(PGPContext {
+        user_id: PGPUserId {
+            user_id: user_id.to_string(),
+        },
         sign_key: PGPSignKey {
             created_timestamp_secs: TIMESTAMP,
             keypair: Keypair {
                 public: sign_public_key,
-                secret: sign_private_key,
+                secret: sign_secret_key,
             },
         },
         encrypt_key: PGPEncryptKey {
             created_timestamp_secs: TIMESTAMP,
             keypair: Keypair {
                 public: encrypt_public_key,
-                secret: encrypt_private_key,
+                secret: encrypt_secret_key,
             },
         },
-    };
-    // Build the PGP output.
-    let mut buffer = PGPBuffer {
-        context,
-        buffer: Cursor::new(Vec::new()),
-    };
-    buffer.output(BufWriter::new(std::io::stdout()))
+    })
+}
+
+fn main() -> Result<()> {
+    let user_id = "Juan Pablo Darago <jpdarago@gmail.com>";
+    let mnemonic = Mnemonic::from_phrase("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Language::English)?;
+    let context = build_keys(&user_id, mnemonic.phrase())?;
+    let mut buffer = Cursor::new(Vec::new());
+    // Write user id.
+    context.sign_key.secret_as_packet(&mut buffer)?;
+    let mut out = BufWriter::new(std::io::stdout());
+    if let Err(err) = out.write(&buffer.get_ref()) {
+        Err(Box::new(err))
+    } else {
+        Ok(())
+    }
+}
+
+fn main2() -> Result<()> {
+    print!("Please input the RFC 2822 User ID: ");
+    std::io::stdout().flush()?;
+    let mut user_id = String::new();
+    std::io::stdin().read_line(&mut user_id)?;
+    println!("Please input the BIP 39 words separated by spaces: ");
+    // Convert BIP39 passphrase to seed.
+    let mut phrase = String::new();
+    std::io::stdin().read_line(&mut phrase)?;
+    let mnemonic = Mnemonic::from_phrase(phrase.trim(), Language::English)?;
+    let context = build_keys(&user_id, mnemonic.phrase())?;
+    output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
 }
