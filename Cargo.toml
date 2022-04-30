@@ -14,3 +14,4 @@ sha2 = "0.10.2"
 sha1 = "0.10.0"
 tiny-bip39 = "0.8.2"
 clap = { version = "3.1.13", features = ["derive"] }
+rust-argon2 = "1.0.0"

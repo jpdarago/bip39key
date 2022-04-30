@@ -4,7 +4,7 @@ use clap::Parser;
 use ed25519_dalek::Signer;
 use sha1::Sha1;
 use sha2::Digest;
-use sha2::{Sha256, Sha512};
+use sha2::Sha256;
 use std::error::Error;
 use std::io::{BufWriter, Cursor, Write};
 
@@ -387,12 +387,12 @@ fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> 
     }
 }
 
-fn build_keys(user_id: &str, seed: &str) -> Result<PGPContext> {
-    // Derive 64 bytes (32 for sign key, 32 for encryption key) from the bytes.
-    let mut hasher = Sha512::new();
-    hasher.update(&seed);
+fn build_keys(user_id: &str, seed: &[u8]) -> Result<PGPContext> {
+    // Derive 64 bytes by running Argon with the user id as salt.
+    let mut config = argon2::Config::default();
+    config.hash_length = 64;
     // Build PGP context from the 64 bytes.
-    let secret_key_bytes = hasher.finalize();
+    let secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
     Ok(PGPContext {
         user_id: PGPUserId {
             user_id: user_id.to_string(),
@@ -401,9 +401,10 @@ fn build_keys(user_id: &str, seed: &str) -> Result<PGPContext> {
         encrypt_key: PGPEncryptKey::new(&secret_key_bytes[32..])?,
         metadata: PGPLiteralPacket {
             data: format!(
-                "Created by {} version {}",
+                "Created by {} version {} with Argon settings {:?}",
                 env!("CARGO_PKG_NAME"),
-                env!("CARGO_PKG_VERSION")
+                env!("CARGO_PKG_VERSION"),
+                &config
             ),
         },
     })
@@ -424,6 +425,6 @@ fn main() -> Result<()> {
     let mnemonic =
         Mnemonic::from_phrase(phrase.trim(), Language::English).expect("Invalid Mnemonic");
     let context =
-        build_keys(&args.user_id, mnemonic.phrase()).expect("Could not build OpenPGP keys");
+        build_keys(&args.user_id, mnemonic.entropy()).expect("Could not build OpenPGP keys");
     output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
 }
