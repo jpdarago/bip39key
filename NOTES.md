@@ -270,6 +270,49 @@ Fixed scalar multiplication
         data: [256 bits]
 ```
 
+## Packets for a passphrasegpg key with extra info
+
+```sh
+# off=0 ctb=c5 tag=5 hlen=2 plen=88 new-ctb
+:secret key packet:
+        version 4, algo 22, created 0, expires 0
+        pkey[0]: [80 bits] ed25519 (1.3.6.1.4.1.11591.15.1)
+        pkey[1]: [263 bits]
+        skey[2]: [255 bits]
+        checksum: 0fc9
+        keyid: 31DDBE7D05A7FE5F
+# off=90 ctb=cd tag=13 hlen=2 plen=38 new-ctb
+:user ID packet: "Juan Pablo Darago <jpdarago@gmail.com>"
+# off=130 ctb=c2 tag=2 hlen=2 plen=100 new-ctb
+:signature packet: algo 22, keyid 31DDBE7D05A7FE5F
+        version 4, created 0, md5len 0, sigclass 0x13
+        digest algo 8, begin of digest e9 30
+        hashed subpkt 2 len 4 (sig created 1970-01-01)
+        hashed subpkt 16 len 8 (issuer key ID 31DDBE7D05A7FE5F)
+        hashed subpkt 27 len 1 (key flags: 03)
+        hashed subpkt 30 len 1 (features: 01)
+        data: [256 bits]
+        data: [255 bits]
+# off=232 ctb=c7 tag=7 hlen=2 plen=93 new-ctb
+:secret sub key packet:
+        version 4, algo 18, created 0, expires 0
+        pkey[0]: [88 bits] cv25519 (1.3.6.1.4.1.3029.1.5.1)
+        pkey[1]: [263 bits]
+        pkey[2]: [32 bits]
+        skey[3]: [255 bits]
+        checksum: 11ce
+        keyid: 9FDEE517BEAA6B6D
+# off=327 ctb=c2 tag=2 hlen=2 plen=97 new-ctb
+:signature packet: algo 22, keyid 31DDBE7D05A7FE5F
+        version 4, created 0, md5len 0, sigclass 0x18
+        digest algo 8, begin of digest 78 a3
+        hashed subpkt 2 len 4 (sig created 1970-01-01)
+        hashed subpkt 16 len 8 (issuer key ID 31DDBE7D05A7FE5F)
+        hashed subpkt 27 len 1 (key flags: 0C)
+        data: [255 bits]
+        data: [255 bits]
+```
+
 ## Links
 
 * [RFC4880 - OpenPGP packet spec](https://datatracker.ietf.org/doc/html/rfc4880#page-5)
