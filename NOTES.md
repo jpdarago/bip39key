@@ -117,7 +117,7 @@ Fixed scalar multiplication
 
 ### Packets for a throwaway Curve25519 key without password.
 
-```
+```sh
 # off=0 ctb=94 tag=5 hlen=2 plen=88
 :secret key packet:
         version 4, algo 22, created 1637784583, expires 0
@@ -147,7 +147,7 @@ Fixed scalar multiplication
 
 ### Packets for a throwaway Curve25519 key with password.
 
-```
+```sh
 # off=0 ctb=94 tag=5 hlen=2 plen=134
 :secret key packet:
         version 4, algo 22, created 1637869917, expires 0
@@ -200,7 +200,7 @@ Fixed scalar multiplication
 
 ### Packets for a throwaway Curve25519 key without password with Sign and Encryption
 
-```
+```sh
 # off=0 ctb=94 tag=5 hlen=2 plen=88
 :secret key packet:
         version 4, algo 22, created 1650302227, expires 0
@@ -244,6 +244,29 @@ Fixed scalar multiplication
         hashed subpkt 27 len 1 (key flags: 0C)
         subpkt 16 len 8 (issuer key ID E30A73DD1E2A2221)
         data: [255 bits]
+        data: [256 bits]
+```
+
+### Packets for a passphrasepgp key
+
+```sh
+:secret key packet:
+        version 4, algo 22, created 0, expires 0
+        pkey[0]: [80 bits] ed25519 (1.3.6.1.4.1.11591.15.1)
+        pkey[1]: [263 bits]
+        skey[2]: [254 bits]
+        checksum: 0fc0
+        keyid: E50251E9DE87D13F
+# off=90 ctb=cd tag=13 hlen=2 plen=38 new-ctb
+:user ID packet: "Juan Pablo Darago <jpdarago@gmail.com>"
+# off=130 ctb=c2 tag=2 hlen=2 plen=97 new-ctb
+:signature packet: algo 22, keyid E50251E9DE87D13F
+        version 4, created 0, md5len 0, sigclass 0x13
+        digest algo 8, begin of digest 7a ae
+        hashed subpkt 2 len 4 (sig created 1970-01-01)
+        hashed subpkt 16 len 8 (issuer key ID E50251E9DE87D13F)
+        hashed subpkt 27 len 1 (key flags: 03)
+        data: [256 bits]
         data: [256 bits]
 ```
 
