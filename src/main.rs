@@ -314,7 +314,12 @@ impl PGPEncryptKey {
         self.public_as_packet(&mut cursor)?;
         // S2K unencrypted i.e. without passphrase protection.
         cursor.write(&[0])?;
-        let mpi_key = mpi_encode(&self.secret_key.to_bytes());
+        // TODO: Why do we need this? I took it from passphrase2pgp but I do not understand why we
+        // would need to reverse the secret key.
+        let mut reverse_secret_key: [u8; 32] = [0; 32];
+        reverse_secret_key.copy_from_slice(&self.secret_key.to_bytes());
+        reverse_secret_key.reverse();
+        let mpi_key = mpi_encode(&reverse_secret_key);
         cursor.write(&mpi_key)?;
         cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
         // The packet header does not count for the total length.
