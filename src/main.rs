@@ -372,18 +372,7 @@ fn main() -> Result<()> {
     let user_id = "Juan Pablo Darago <jpdarago@gmail.com>";
     let mnemonic = Mnemonic::from_phrase("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Language::English)?;
     let context = build_keys(&user_id, mnemonic.phrase())?;
-    let mut buffer = Cursor::new(Vec::new());
-    context.sign_key.secret_as_packet(&mut buffer)?;
-    context.user_id.as_packet(&mut buffer)?;
-    context
-        .sign_key
-        .self_sign_as_packet(&context.user_id, &mut buffer)?;
-    let mut out = BufWriter::new(std::io::stdout());
-    if let Err(err) = out.write(&buffer.get_ref()) {
-        Err(Box::new(err))
-    } else {
-        Ok(())
-    }
+    output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
 }
 
 fn main2() -> Result<()> {
