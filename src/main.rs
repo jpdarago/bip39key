@@ -215,6 +215,8 @@ impl PGPSignKey {
         subpacket_cursor.write(&[2, 27, 0x03])?;
         // Features Subpacket (30): MDC
         subpacket_cursor.write(&[2, 30, 0x01])?;
+        // Trust signature: 120 for complete trust.
+        subpacket_cursor.write(&[3, 5, 0, 120])?;
         // Write subpackets into the hashed subpacket area.
         let subpackets = subpacket_cursor.get_ref();
         packet_cursor.write_u16::<BigEndian>(subpackets.len() as u16)?;
@@ -266,6 +268,8 @@ impl PGPSignKey {
         subpacket_cursor.write(&key_fp)?;
         // Key Flags (27) subpacket (encrypt).
         subpacket_cursor.write(&[2, 27, 0x0c])?;
+        // Trust signature: 120 for complete trust.
+        subpacket_cursor.write(&[3, 5, 0, 120])?;
         // Write subpackets into the hashed subpacket area.
         let subpackets = subpacket_cursor.get_ref();
         packet_cursor.write_u16::<BigEndian>(subpackets.len() as u16)?;
