@@ -1,5 +1,6 @@
 use bip39::{Language, Mnemonic};
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
+use clap::Parser;
 use ed25519_dalek::Signer;
 use sha1::Sha1;
 use sha2::Digest;
@@ -379,7 +380,7 @@ fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> 
         .sign_key
         .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
     context.metadata.as_packet(&mut buffer)?;
-    if let Err(err) = out.write(&buffer.get_ref()) {
+    if let Err(err) = out.write_all(&buffer.get_ref()) {
         Err(Box::new(err))
     } else {
         Ok(())
@@ -408,23 +409,21 @@ fn build_keys(user_id: &str, seed: &str) -> Result<PGPContext> {
     })
 }
 
-fn main() -> Result<()> {
-    let user_id = "Juan Pablo Darago <jpdarago@gmail.com>";
-    let mnemonic = Mnemonic::from_phrase("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", Language::English)?;
-    let context = build_keys(&user_id, mnemonic.phrase())?;
-    output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    /// RFC 2822 of the user.
+    #[clap(short, long)]
+    user_id: String,
 }
 
-fn main2() -> Result<()> {
-    print!("Please input the RFC 2822 User ID: ");
-    std::io::stdout().flush()?;
-    let mut user_id = String::new();
-    std::io::stdin().read_line(&mut user_id)?;
-    println!("Please input the BIP 39 words separated by spaces: ");
-    // Convert BIP39 passphrase to seed.
+fn main() -> Result<()> {
+    let args = Args::parse();
     let mut phrase = String::new();
     std::io::stdin().read_line(&mut phrase)?;
-    let mnemonic = Mnemonic::from_phrase(phrase.trim(), Language::English)?;
-    let context = build_keys(&user_id, mnemonic.phrase())?;
+    let mnemonic =
+        Mnemonic::from_phrase(phrase.trim(), Language::English).expect("Invalid Mnemonic");
+    let context =
+        build_keys(&args.user_id, mnemonic.phrase()).expect("Could not build OpenPGP keys");
     output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
 }
