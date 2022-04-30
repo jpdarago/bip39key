@@ -219,7 +219,7 @@ impl PGPSignKey {
         subpacket_cursor.write(&[22, 33, 4]);
         subpacket_cursor.write(&key_fp)?;
         // Key Flags (27) subpacket (encrypt).
-        subpacket_cursor.write(&[27, 0x0c])?;
+        subpacket_cursor.write(&[2, 27, 0x0c])?;
         // Write subpackets into the hashed subpacket area.
         let subpackets = subpacket_cursor.get_ref();
         packet_cursor.write_u16::<BigEndian>(subpackets.len() as u16)?;
@@ -339,10 +339,10 @@ fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> 
     // Write user id.
     context.sign_key.secret_as_packet(&mut buffer)?;
     context.user_id.as_packet(&mut buffer)?;
-    context.encrypt_key.secret_as_packet(&mut buffer)?;
     context
         .sign_key
         .self_sign_as_packet(&context.user_id, &mut buffer)?;
+    context.encrypt_key.secret_as_packet(&mut buffer)?;
     context
         .sign_key
         .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
