@@ -18,10 +18,10 @@ const TIMESTAMP: u32 = 1231006505;
 enum PGPPacketType {
     PrivateEncryptSubkey,
     PrivateSignKey,
-    PublicEncryptSubkey,
     PublicSignKey,
     Signature,
     UserId,
+    LiteralData,
 }
 
 // Hash a u16 number.
@@ -48,10 +48,10 @@ fn output_as_packet(
         | match packet_type {
             PGPPacketType::PrivateEncryptSubkey => 7,
             PGPPacketType::PrivateSignKey => 5,
-            PGPPacketType::PublicEncryptSubkey => 14,
             PGPPacketType::PublicSignKey => 6,
             PGPPacketType::Signature => 2,
             PGPPacketType::UserId => 13,
+            PGPPacketType::LiteralData => 11,
         };
     out.write(&[type_byte])?;
     let length = packet_bytes.len();
@@ -107,6 +107,26 @@ struct PGPUserId {
 impl PGPUserId {
     fn as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
         output_as_packet(PGPPacketType::UserId, &self.user_id.as_bytes(), out)
+    }
+}
+
+struct PGPLiteralPacket {
+    data: String,
+}
+
+impl PGPLiteralPacket {
+    fn as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
+        let mut cursor = ByteCursor::new(Vec::with_capacity(256));
+        // Text data as UTF-8.
+        cursor.write(&[0x75])?;
+        // Made up filename, its not important.
+        let filename = "bip39pgp.info.txt";
+        cursor.write(&[filename.len() as u8])?;
+        cursor.write(filename.as_bytes())?;
+        // Timestamp for the file, its not important.
+        cursor.write_u32::<BigEndian>(TIMESTAMP)?;
+        cursor.write(self.data.as_bytes())?;
+        output_as_packet(PGPPacketType::LiteralData, &cursor.get_ref(), out)
     }
 }
 
@@ -339,6 +359,7 @@ struct PGPContext {
     user_id: PGPUserId,
     sign_key: PGPSignKey,
     encrypt_key: PGPEncryptKey,
+    metadata: PGPLiteralPacket,
 }
 
 fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> Result<()> {
@@ -353,6 +374,7 @@ fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> 
     context
         .sign_key
         .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
+    context.metadata.as_packet(&mut buffer)?;
     if let Err(err) = out.write(&buffer.get_ref()) {
         Err(Box::new(err))
     } else {
@@ -372,6 +394,13 @@ fn build_keys(user_id: &str, seed: &str) -> Result<PGPContext> {
         },
         sign_key: PGPSignKey::new(&secret_key_bytes[..32])?,
         encrypt_key: PGPEncryptKey::new(&secret_key_bytes[32..])?,
+        metadata: PGPLiteralPacket {
+            data: format!(
+                "Created by {} version {}",
+                env!("CARGO_PKG_NAME"),
+                env!("CARGO_PKG_VERSION")
+            ),
+        },
     })
 }
 
