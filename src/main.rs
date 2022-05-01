@@ -25,14 +25,12 @@ enum PGPPacketType {
     LiteralData,
 }
 
-// Hash a u16 number.
 fn hash_u16(n: u16, hasher: &mut sha2::Sha256) {
     let mut buf = [0; 2];
     BigEndian::write_u16(&mut buf, n);
     hasher.update(&buf);
 }
 
-// Hash a u32 number.
 fn hash_u32(n: u32, hasher: &mut sha2::Sha256) {
     let mut buf = [0; 4];
     BigEndian::write_u32(&mut buf, n);
@@ -370,7 +368,6 @@ struct PGPContext {
 
 fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> Result<()> {
     let mut buffer = Cursor::new(Vec::new());
-    // Write user id.
     context.sign_key.secret_as_packet(&mut buffer)?;
     context.user_id.as_packet(&mut buffer)?;
     context
