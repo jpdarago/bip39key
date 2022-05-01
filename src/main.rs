@@ -415,18 +415,34 @@ fn build_keys(user_id: &str, seed: &[u8]) -> Result<PGPContext> {
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// RFC 2822 of the user.
+    /// RFC 2822 of the user, e.g. "User <user@email.com>".
     #[clap(short, long)]
     user_id: String,
+
+    /// Filename where to output the keys, if not present then write to stdout.
+    #[clap(short, long)]
+    filename: Option<String>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
     let mut phrase = String::new();
     std::io::stdin().read_line(&mut phrase)?;
-    let mnemonic =
-        Mnemonic::from_phrase(phrase.trim(), Language::English).expect("Invalid Mnemonic");
-    let context =
-        build_keys(&args.user_id, mnemonic.entropy()).expect("Could not build OpenPGP keys");
-    output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
+    let mnemonic = Mnemonic::from_phrase(phrase.trim(), Language::English);
+    if let Err(err) = mnemonic {
+        eprintln!("Invalid BIP39 mnemonic: {}", err);
+        std::process::exit(1);
+    }
+    let context = build_keys(&args.user_id, mnemonic.unwrap().entropy())
+        .expect("Could not build OpenPGP keys");
+    if let Some(filename) = args.filename {
+        let output = std::fs::File::open(&filename);
+        if let Err(err) = output {
+            eprintln!("Cannot open output file {}: {}", filename, err);
+            std::process::exit(1);
+        }
+        output_pgp_packets(&context, BufWriter::new(&mut output.unwrap()))
+    } else {
+        output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
+    }
 }
