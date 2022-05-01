@@ -3,7 +3,7 @@
 set -euo pipefail
 
 export REALNAME="Satoshi Nakamoto"
-export EMAIL="satoshi@gmx.com"
+export EMAIL="satoshin@gmx.com"
 export USERID="$REALNAME <$EMAIL>"
 
 export BIP_39_1="legal winner thank year wave sausage worth useful legal winner thank yellow"
