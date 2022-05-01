@@ -11,7 +11,7 @@ use std::io::{BufWriter, Cursor, Write};
 type ByteCursor = Cursor<Vec<u8>>;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-// Set the creation time as the timestamp of the Bitcoin genesis block. Any timestamp would
+// Default creation time: timestamp of the Bitcoin genesis block. Any timestamp would
 // work but this one is fairly recent, well established, and stored in a decentralized
 // database.
 const TIMESTAMP: u32 = 1231006505;
@@ -113,6 +113,7 @@ impl PGPUserId {
 
 struct PGPLiteralPacket {
     data: String,
+    timestamp_secs: u32,
 }
 
 impl PGPLiteralPacket {
@@ -125,7 +126,7 @@ impl PGPLiteralPacket {
         cursor.write(&[filename.len() as u8])?;
         cursor.write(filename.as_bytes())?;
         // Timestamp for the file, its not important.
-        cursor.write_u32::<BigEndian>(TIMESTAMP)?;
+        cursor.write_u32::<BigEndian>(self.timestamp_secs)?;
         cursor.write(self.data.as_bytes())?;
         output_as_packet(PGPPacketType::LiteralData, &cursor.get_ref(), out)
     }
@@ -137,11 +138,11 @@ struct PGPSignKey {
 }
 
 impl PGPSignKey {
-    fn new(secret_key_bytes: &[u8]) -> Result<PGPSignKey> {
+    fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<PGPSignKey> {
         let sign_secret_key = ed25519_dalek::SecretKey::from_bytes(&secret_key_bytes)?;
         let sign_public_key: ed25519_dalek::PublicKey = (&sign_secret_key).into();
         Ok(PGPSignKey {
-            created_timestamp_secs: TIMESTAMP,
+            created_timestamp_secs: timestamp_secs,
             keypair: ed25519_dalek::Keypair {
                 public: sign_public_key,
                 secret: sign_secret_key,
@@ -313,14 +314,14 @@ struct PGPEncryptKey {
 }
 
 impl PGPEncryptKey {
-    fn new(secret_key_bytes: &[u8]) -> Result<PGPEncryptKey> {
+    fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<PGPEncryptKey> {
         // x25519_dalek requires a fixed size buffer. Instead of wrangling slices let's just copy.
         let mut encrypt_secret_key_bytes: [u8; 32] = [0; 32];
         encrypt_secret_key_bytes.copy_from_slice(&secret_key_bytes);
         let encrypt_secret_key: x25519_dalek::StaticSecret = encrypt_secret_key_bytes.into();
         let encrypt_public_key = x25519_dalek::PublicKey::from(&encrypt_secret_key);
         Ok(PGPEncryptKey {
-            created_timestamp_secs: TIMESTAMP,
+            created_timestamp_secs: timestamp_secs,
             public_key: encrypt_public_key,
             secret_key: encrypt_secret_key,
         })
@@ -387,7 +388,7 @@ fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> 
     }
 }
 
-fn build_keys(user_id: &str, seed: &[u8]) -> Result<PGPContext> {
+fn build_keys(user_id: &str, seed: &[u8], timestamp_secs: u32) -> Result<PGPContext> {
     // Derive 64 bytes by running Argon with the user id as salt.
     let mut config = argon2::Config::default();
     config.hash_length = 64;
@@ -399,9 +400,10 @@ fn build_keys(user_id: &str, seed: &[u8]) -> Result<PGPContext> {
         user_id: PGPUserId {
             user_id: user_id.to_string(),
         },
-        sign_key: PGPSignKey::new(&secret_key_bytes[..32])?,
-        encrypt_key: PGPEncryptKey::new(&secret_key_bytes[32..])?,
+        sign_key: PGPSignKey::new(&secret_key_bytes[..32], timestamp_secs)?,
+        encrypt_key: PGPEncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?,
         metadata: PGPLiteralPacket {
+            timestamp_secs,
             data: format!(
                 "Created by {} version {} with Argon settings {:?}",
                 env!("CARGO_PKG_NAME"),
@@ -422,6 +424,10 @@ struct Args {
     /// Filename where to output the keys, if not present then write to stdout.
     #[clap(short, long)]
     filename: Option<String>,
+
+    /// Timestamp (in seconds) for the dates. If unset, use the default 1231006505.
+    #[clap(short, long)]
+    timestamp: Option<u32>,
 }
 
 fn main() -> Result<()> {
@@ -433,8 +439,12 @@ fn main() -> Result<()> {
         eprintln!("Invalid BIP39 mnemonic: {}", err);
         std::process::exit(1);
     }
-    let context = build_keys(&args.user_id, mnemonic.unwrap().entropy())
-        .expect("Could not build OpenPGP keys");
+    let context = build_keys(
+        &args.user_id,
+        mnemonic.unwrap().entropy(),
+        args.timestamp.unwrap_or(TIMESTAMP),
+    )
+    .expect("Could not build OpenPGP keys");
     if let Some(filename) = args.filename {
         let output = std::fs::File::open(&filename);
         if let Err(err) = output {
