@@ -457,12 +457,17 @@ fn main() -> Result<()> {
         eprintln!("Invalid BIP39 mnemonic: {}", err);
         std::process::exit(1);
     }
-    let context = build_keys(
-        &args.user_id,
-        mnemonic.unwrap().entropy(),
-        args.timestamp.unwrap_or(TIMESTAMP),
-    )
-    .expect("Could not build OpenPGP keys");
+    let unwrapped = mnemonic.unwrap();
+    let entropy = unwrapped.entropy();
+    if 8 * entropy.len() < 128 {
+        eprintln!(
+            "Invalid BIP39 mnemonic, insufficient entropy (need at least 128 bits, have {}).",
+            8 * entropy.len()
+        );
+        std::process::exit(1);
+    }
+    let context = build_keys(&args.user_id, &entropy, args.timestamp.unwrap_or(TIMESTAMP))
+        .expect("Could not build OpenPGP keys");
     let output_keys = if args.subkey.unwrap_or(true) {
         OutputKeys::SignAndEncryptionKey
     } else {
