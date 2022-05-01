@@ -391,7 +391,9 @@ fn build_keys(user_id: &str, seed: &[u8]) -> Result<PGPContext> {
     // Derive 64 bytes by running Argon with the user id as salt.
     let mut config = argon2::Config::default();
     config.hash_length = 64;
-    // Build PGP context from the 64 bytes.
+    config.variant = argon2::Variant::Argon2id;
+    config.time_cost = 8; // 8 passes.
+    config.mem_cost = 32 * 1024; // Request 32 Mb.
     let secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
     Ok(PGPContext {
         user_id: PGPUserId {
