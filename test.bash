@@ -5,7 +5,7 @@ set -euo pipefail
 export REALNAME="Satoshi Nakamoto"
 export EMAIL="satoshin@gmx.com"
 export USERID="$REALNAME <$EMAIL>"
-export KEYID="7AF9E5EF4F47F53A74F70271D5B79D8F0BA42B12"
+export KEYID="E3CF60B9A20DC3759FADCA2157E57457587213E6"
 
 export BIP_39_1="legal winner thank year wave sausage worth useful legal winner thank yellow"
 export BIP_39_2="letter advice cage absurd amount doctor acoustic avoid letter advice cage above"

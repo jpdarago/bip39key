@@ -52,23 +52,23 @@ fn output_as_packet(
             PGPPacketType::UserId => 13,
             PGPPacketType::LiteralData => 11,
         };
-    out.write(&[type_byte])?;
+    out.write_all(&[type_byte])?;
     let length = packet_bytes.len();
     match length {
         0..=191 => {
-            out.write(&[(length & 0xFF) as u8])?;
+            out.write_all(&[(length & 0xFF) as u8])?;
         }
         192..=8383 => {
             let first_byte: u8 = (((length & !0xFF) >> 8) + 192).try_into()?;
             let second_byte: u8 = ((length & 0xFF) - 192).try_into()?;
-            out.write(&[first_byte, second_byte])?;
+            out.write_all(&[first_byte, second_byte])?;
         }
         _ => {
-            out.write(&[255])?;
+            out.write_all(&[255])?;
             out.write_u32::<BigEndian>(length.try_into()?)?;
         }
     };
-    out.write(packet_bytes)?;
+    out.write_all(packet_bytes)?;
     Ok(())
 }
 
@@ -76,10 +76,10 @@ fn output_as_packet(
 fn mpi_encode(data: &[u8]) -> Vec<u8> {
     let mut slice = data;
     // Remove all leading zeroes.
-    while slice.len() > 0 && slice[0] == 0 {
+    while !slice.is_empty() && slice[0] == 0 {
         slice = &slice[1..];
     }
-    if slice.len() == 0 {
+    if slice.is_empty() {
         return vec![0, 0];
     }
     let mut vec = Vec::with_capacity(slice.len() + 2);
@@ -104,8 +104,8 @@ struct PGPUserId {
 }
 
 impl PGPUserId {
-    fn as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
-        output_as_packet(PGPPacketType::UserId, &self.user_id.as_bytes(), out)
+    fn as_packet(&self, out: &mut ByteCursor) -> Result<()> {
+        output_as_packet(PGPPacketType::UserId, self.user_id.as_bytes(), out)
     }
 }
 
@@ -115,18 +115,18 @@ struct PGPLiteralPacket {
 }
 
 impl PGPLiteralPacket {
-    fn as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
+    fn as_packet(&self, out: &mut ByteCursor) -> Result<()> {
         let mut cursor = ByteCursor::new(Vec::with_capacity(256));
         // Text data as UTF-8.
-        cursor.write(&[0x75])?;
+        cursor.write_all(&[0x75])?;
         // Made up filename, its not important.
         let filename = "bip39pgp.info.txt";
-        cursor.write(&[filename.len() as u8])?;
-        cursor.write(filename.as_bytes())?;
+        cursor.write_all(&[filename.len() as u8])?;
+        cursor.write_all(filename.as_bytes())?;
         // Timestamp for the file, its not important.
         cursor.write_u32::<BigEndian>(self.timestamp_secs)?;
-        cursor.write(self.data.as_bytes())?;
-        output_as_packet(PGPPacketType::LiteralData, &cursor.get_ref(), out)
+        cursor.write_all(self.data.as_bytes())?;
+        output_as_packet(PGPPacketType::LiteralData, cursor.get_ref(), out)
     }
 }
 
@@ -137,7 +137,7 @@ struct PGPSignKey {
 
 impl PGPSignKey {
     fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<PGPSignKey> {
-        let sign_secret_key = ed25519_dalek::SecretKey::from_bytes(&secret_key_bytes)?;
+        let sign_secret_key = ed25519_dalek::SecretKey::from_bytes(secret_key_bytes)?;
         let sign_public_key: ed25519_dalek::PublicKey = (&sign_secret_key).into();
         Ok(PGPSignKey {
             created_timestamp_secs: timestamp_secs,
@@ -148,41 +148,41 @@ impl PGPSignKey {
         })
     }
 
-    fn public_packet_payload(self: &Self) -> Result<Vec<u8>> {
+    fn public_packet_payload(&self) -> Result<Vec<u8>> {
         let mut cursor = ByteCursor::new(Vec::with_capacity(256));
-        cursor.write(&[0x04])?; // Version 4.
-        cursor.write_u32::<BigEndian>(self.created_timestamp_secs.try_into()?)?;
-        cursor.write(&[22])?; // Algorithm, EdDSA
+        cursor.write_all(&[0x04])?; // Version 4.
+        cursor.write_u32::<BigEndian>(self.created_timestamp_secs)?;
+        cursor.write_all(&[22])?; // Algorithm, EdDSA
         let oid: [u8; 9] = [0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01]; // EdDSA OID
-        cursor.write(&[oid.len().try_into()?])?;
-        cursor.write(&oid)?;
+        cursor.write_all(&[oid.len().try_into()?])?;
+        cursor.write_all(&oid)?;
         // 263 bits: 7 bits for 0x40 prefix byte and 32 bytes for public key.
         cursor.write_u16::<BigEndian>(263)?;
         // Prefix octet for EdDSA Point Format.
-        cursor.write(&[0x40])?;
-        cursor.write(self.keypair.public.as_bytes())?;
+        cursor.write_all(&[0x40])?;
+        cursor.write_all(self.keypair.public.as_bytes())?;
         Ok(cursor.into_inner())
     }
 
-    fn public_as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
+    fn public_as_packet(&self, out: &mut ByteCursor) -> Result<()> {
         let payload = self.public_packet_payload()?;
         output_as_packet(PGPPacketType::PublicSignKey, &payload, out)
     }
 
-    fn secret_as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
+    fn secret_as_packet(&self, out: &mut ByteCursor) -> Result<()> {
         let mut cursor = Cursor::new(Vec::with_capacity(256));
         let payload = self.public_packet_payload()?;
-        cursor.write(&payload)?;
+        cursor.write_all(&payload)?;
         // S2K unencrypted i.e. without passphrase protection.
-        cursor.write(&[0])?;
+        cursor.write_all(&[0])?;
         let mpi_key = mpi_encode(self.keypair.secret.as_bytes());
-        cursor.write(&mpi_key)?;
+        cursor.write_all(&mpi_key)?;
         cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
         // The packet header does not count for the total length.
-        output_as_packet(PGPPacketType::PrivateSignKey, &cursor.get_ref(), out)
+        output_as_packet(PGPPacketType::PrivateSignKey, cursor.get_ref(), out)
     }
 
-    fn key_fingerprint(self: &Self) -> Result<Vec<u8>> {
+    fn key_fingerprint(&self) -> Result<Vec<u8>> {
         let mut hasher = Sha1::new();
         let mut cursor = Cursor::new(Vec::with_capacity(256));
         self.public_as_packet(&mut cursor)?;
@@ -193,34 +193,34 @@ impl PGPSignKey {
         Ok(hasher.finalize().to_vec())
     }
 
-    fn self_sign_as_packet(self: &Self, user_id: &PGPUserId, out: &mut ByteCursor) -> Result<()> {
+    fn self_sign_as_packet(&self, user_id: &PGPUserId, out: &mut ByteCursor) -> Result<()> {
         let mut packet_cursor = Cursor::new(Vec::with_capacity(256));
         // Version 4 signature.
         // Positive certification signature (0x13).
         // EdDSA signature (22), SHA-256 hash (8).
-        packet_cursor.write(&[0x04, 0x13, 22, 8])?;
+        packet_cursor.write_all(&[0x04, 0x13, 22, 8])?;
         // Write subpackets to a buffer.
         // Signature creation time subpacket (2), 5 bytes.
         let mut subpacket_cursor = Cursor::new(Vec::with_capacity(256));
-        subpacket_cursor.write(&[5, 2])?;
+        subpacket_cursor.write_all(&[5, 2])?;
         subpacket_cursor.write_u32::<BigEndian>(self.created_timestamp_secs)?;
         // Issuer subpacket (16), signature key id.
         let key_fp = self.key_fingerprint()?;
-        subpacket_cursor.write(&[9, 16])?;
-        subpacket_cursor.write(&key_fp[12..20])?;
+        subpacket_cursor.write_all(&[9, 16])?;
+        subpacket_cursor.write_all(&key_fp[12..20])?;
         // Issuer fingerprint (33), version 4.
-        subpacket_cursor.write(&[22, 33, 4])?;
-        subpacket_cursor.write(&key_fp)?;
+        subpacket_cursor.write_all(&[22, 33, 4])?;
+        subpacket_cursor.write_all(&key_fp)?;
         // Key Flags (27) subpacket (sign and certify).
-        subpacket_cursor.write(&[2, 27, 0x03])?;
+        subpacket_cursor.write_all(&[2, 27, 0x03])?;
         // Features Subpacket (30): MDC
-        subpacket_cursor.write(&[2, 30, 0x01])?;
+        subpacket_cursor.write_all(&[2, 30, 0x01])?;
         // Trust signature: 120 for complete trust.
-        subpacket_cursor.write(&[3, 5, 0, 120])?;
+        subpacket_cursor.write_all(&[3, 5, 0, 120])?;
         // Write subpackets into the hashed subpacket area.
         let subpackets = subpacket_cursor.get_ref();
         packet_cursor.write_u16::<BigEndian>(subpackets.len() as u16)?;
-        packet_cursor.write(&subpackets)?;
+        packet_cursor.write_all(subpackets)?;
         // Compute total hash of the public key + subpackets + trailer
         // now that we have the packet up to the point we need to hash.
         let mut hasher = Sha256::new();
@@ -242,38 +242,38 @@ impl PGPSignKey {
         // No unhashed subpackets.
         packet_cursor.write_u16::<BigEndian>(0)?;
         // Push the signature of the hash.
-        packet_cursor.write(&hash[..2])?;
-        packet_cursor.write(&mpi_encode(&signature[..32]))?;
-        packet_cursor.write(&mpi_encode(&signature[32..]))?;
+        packet_cursor.write_all(&hash[..2])?;
+        packet_cursor.write_all(&mpi_encode(&signature[..32]))?;
+        packet_cursor.write_all(&mpi_encode(&signature[32..]))?;
         output_as_packet(PGPPacketType::Signature, packet_cursor.get_ref(), out)
     }
 
-    fn bind_key_as_packet(self: &Self, subkey: &PGPEncryptKey, out: &mut ByteCursor) -> Result<()> {
+    fn bind_key_as_packet(&self, subkey: &PGPEncryptKey, out: &mut ByteCursor) -> Result<()> {
         let mut packet_cursor = Cursor::new(Vec::with_capacity(256));
         // Version 4 signature.
         // Subkey binding signature (0x18).
         // EdDSA signature (22), SHA-256 hash (8).
-        packet_cursor.write(&[0x04, 0x18, 22, 8])?;
+        packet_cursor.write_all(&[0x04, 0x18, 22, 8])?;
         // Write subpackets to a buffer.
         // Signature creation time subpacket (2), 5 bytes.
         let mut subpacket_cursor = Cursor::new(Vec::with_capacity(256));
-        subpacket_cursor.write(&[5, 2])?;
+        subpacket_cursor.write_all(&[5, 2])?;
         subpacket_cursor.write_u32::<BigEndian>(self.created_timestamp_secs)?;
         // Issuer subpacket (16), signature key id.
         let key_fp = self.key_fingerprint()?;
-        subpacket_cursor.write(&[9, 16])?;
-        subpacket_cursor.write(&key_fp[12..20])?;
+        subpacket_cursor.write_all(&[9, 16])?;
+        subpacket_cursor.write_all(&key_fp[12..20])?;
         // Issuer fingerprint (33), version 4.
-        subpacket_cursor.write(&[22, 33, 4])?;
-        subpacket_cursor.write(&key_fp)?;
+        subpacket_cursor.write_all(&[22, 33, 4])?;
+        subpacket_cursor.write_all(&key_fp)?;
         // Key Flags (27) subpacket (encrypt).
-        subpacket_cursor.write(&[2, 27, 0x0c])?;
+        subpacket_cursor.write_all(&[2, 27, 0x0c])?;
         // Trust signature: 120 for complete trust.
-        subpacket_cursor.write(&[3, 5, 0, 120])?;
+        subpacket_cursor.write_all(&[3, 5, 0, 120])?;
         // Write subpackets into the hashed subpacket area.
         let subpackets = subpacket_cursor.get_ref();
         packet_cursor.write_u16::<BigEndian>(subpackets.len() as u16)?;
-        packet_cursor.write(&subpackets)?;
+        packet_cursor.write_all(subpackets)?;
         // Compute total hash of the public key + encrypted public key +
         // subpackets + trailer now that we have the packet up to the point
         // we need to hash.
@@ -298,9 +298,9 @@ impl PGPSignKey {
         // No unhashed subpackets.
         packet_cursor.write_u16::<BigEndian>(0)?;
         // Push the signature of the hash.
-        packet_cursor.write(&hash[..2])?;
-        packet_cursor.write(&mpi_encode(&signature[..32]))?;
-        packet_cursor.write(&mpi_encode(&signature[32..]))?;
+        packet_cursor.write_all(&hash[..2])?;
+        packet_cursor.write_all(&mpi_encode(&signature[..32]))?;
+        packet_cursor.write_all(&mpi_encode(&signature[32..]))?;
         output_as_packet(PGPPacketType::Signature, packet_cursor.get_ref(), out)
     }
 }
@@ -315,7 +315,7 @@ impl PGPEncryptKey {
     fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<PGPEncryptKey> {
         // x25519_dalek requires a fixed size buffer. Instead of wrangling slices let's just copy.
         let mut encrypt_secret_key_bytes: [u8; 32] = [0; 32];
-        encrypt_secret_key_bytes.copy_from_slice(&secret_key_bytes);
+        encrypt_secret_key_bytes.copy_from_slice(secret_key_bytes);
         let encrypt_secret_key: x25519_dalek::StaticSecret = encrypt_secret_key_bytes.into();
         let encrypt_public_key = x25519_dalek::PublicKey::from(&encrypt_secret_key);
         Ok(PGPEncryptKey {
@@ -325,37 +325,37 @@ impl PGPEncryptKey {
         })
     }
 
-    fn public_packet_payload(self: &Self) -> Result<Vec<u8>> {
+    fn public_packet_payload(&self) -> Result<Vec<u8>> {
         let mut cursor = Cursor::new(Vec::with_capacity(256));
-        cursor.write(&[0x04])?; // Version 4.
-        cursor.write_u32::<BigEndian>(self.created_timestamp_secs.try_into()?)?;
-        cursor.write(&[18])?; // Elliptic Curve Diffie-Hellmann.
+        cursor.write_all(&[0x04])?; // Version 4.
+        cursor.write_u32::<BigEndian>(self.created_timestamp_secs)?;
+        cursor.write_all(&[18])?; // Elliptic Curve Diffie-Hellmann.
         let oid: [u8; 10] = [0x2b, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01]; // Curve25519
-        cursor.write(&[oid.len().try_into()?])?;
-        cursor.write(&oid)?;
+        cursor.write_all(&[oid.len().try_into()?])?;
+        cursor.write_all(&oid)?;
         cursor.write_u16::<BigEndian>(263)?;
-        cursor.write(&[0x40])?;
-        cursor.write(&self.public_key.to_bytes())?;
+        cursor.write_all(&[0x40])?;
+        cursor.write_all(&self.public_key.to_bytes())?;
         // KDF parameters. Length, Reserved, SHA-256, AES-256.
-        cursor.write(&[3, 1, 8, 9])?;
+        cursor.write_all(&[3, 1, 8, 9])?;
         Ok(cursor.into_inner())
     }
 
-    fn secret_as_packet(self: &Self, out: &mut ByteCursor) -> Result<()> {
+    fn secret_as_packet(&self, out: &mut ByteCursor) -> Result<()> {
         let mut cursor = Cursor::new(Vec::with_capacity(256));
         let payload = self.public_packet_payload()?;
-        cursor.write(&payload)?;
+        cursor.write_all(&payload)?;
         // S2K unencrypted i.e. without passphrase protection.
-        cursor.write(&[0])?;
+        cursor.write_all(&[0])?;
         // TODO: Why do we need this? I took it from passphrase2pgp but I do not understand why we
         // would need to reverse the secret key.
         let mut reverse_secret_key: [u8; 32] = [0; 32];
         reverse_secret_key.copy_from_slice(&self.secret_key.to_bytes());
         reverse_secret_key.reverse();
         let mpi_key = mpi_encode(&reverse_secret_key);
-        cursor.write(&mpi_key)?;
+        cursor.write_all(&mpi_key)?;
         cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
-        output_as_packet(PGPPacketType::PrivateEncryptSubkey, &cursor.get_ref(), out)
+        output_as_packet(PGPPacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
     }
 }
 
@@ -382,17 +382,14 @@ fn output_pgp_packets<W: Write>(
     context
         .sign_key
         .self_sign_as_packet(&context.user_id, &mut buffer)?;
-    match output_keys {
-        OutputKeys::SignAndEncryptionKey => {
-            context.encrypt_key.secret_as_packet(&mut buffer)?;
-            context
-                .sign_key
-                .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
-        }
-        _ => {}
+    if let OutputKeys::SignAndEncryptionKey = output_keys {
+        context.encrypt_key.secret_as_packet(&mut buffer)?;
+        context
+            .sign_key
+            .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
     }
     context.metadata.as_packet(&mut buffer)?;
-    if let Err(err) = out.write_all(&buffer.get_ref()) {
+    if let Err(err) = out.write_all(buffer.get_ref()) {
         Err(Box::new(err))
     } else {
         Ok(())
@@ -401,11 +398,17 @@ fn output_pgp_packets<W: Write>(
 
 fn build_keys(user_id: &str, seed: &[u8], timestamp_secs: u32) -> Result<PGPContext> {
     // Derive 64 bytes by running Argon with the user id as salt.
-    let mut config = argon2::Config::default();
-    config.hash_length = 64;
-    config.variant = argon2::Variant::Argon2id;
-    config.time_cost = 8; // 8 passes.
-    config.mem_cost = 32 * 1024; // Request 32 Mb.
+    let config = argon2::Config {
+        variant: argon2::Variant::Argon2id,
+        version: argon2::Version::Version13,
+        mem_cost: 32 * 1024,
+        time_cost: 8,
+        lanes: 4,
+        thread_mode: argon2::ThreadMode::Parallel,
+        secret: &[],
+        ad: &[],
+        hash_length: 64,
+    };
     let secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
     Ok(PGPContext {
         user_id: PGPUserId {
