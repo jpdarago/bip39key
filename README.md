@@ -10,3 +10,7 @@ mnemonic.
 * Requires an RFC 2822 User Id provided with the `-u` flag.
 * Sets the creation timestamp (and all timestamps) to the Bitcoin genesis block.
 * Expands entropy with one call of Argon with default settings.
+
+## Acknowledgements
+
+A lot of the implementation is based on [passphrase2pgp](github.com/skeeto/passphrase2pgp), check that project out!.
