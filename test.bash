@@ -31,23 +31,52 @@ success() {
     echo ": $(tput setaf 2)OK$(tput sgr 0)"
 }
 
+delete_keys() {
+    local keyid="$1"
+    test_gpg --batch --yes --delete-secret-keys "$keyid"
+    test_gpg --batch --yes --delete-keys "$keyid"
+}
+
+import_key() {
+    local bip39="$1"
+    echo "$bip39" | ./target/debug/bip39gpg -u "$USERID" | tee "$homedir/key.asc" | test_gpg --import
+}
+
 echo -n "Building project"
 cargo build --quiet
 success
 
-echo -n "Import a key into PGP"
-echo "$BIP_39_1" | ./target/debug/bip39gpg -u "$USERID" | tee "$homedir/key.asc" | test_gpg --import
-test_gpg --list-keys | grep -q "$USERID" || die "Key for $USERID not found"
-test_gpg --list-keys | grep -q "$KEYID" || die "Key with Key ID $KEYID not found"
+echo -n "Build key"
+import_key "$BIP_39_1"
 success
 
-echo -n "Encrypt, and decrypt after reimporting"
+echo -n "Import a key into PGP"
+test_gpg --import < "$homedir/key.asc"
+test_gpg --list-keys | grep -q "$USERID" || die "Key for $USERID not found"
+test_gpg --list-keys | grep -q "$KEYID" || die "Key with Key ID $KEYID not found"
+delete_keys "$KEYID"
+success
+
+echo -n "Verify signatures"
+test_gpg --import < "$homedir/key.asc"
 export VALUE="$RANDOM"
 echo "Message - $VALUE" > "$homedir/message.txt"
+test_gpg --output "$homedir/message.sig" --detach-sig --sign "$homedir/message.txt"
+delete_keys "$KEYID"
+import_key "$BIP_39_1"
+test_gpg --verify "$homedir/message.sig" "$homedir/message.txt" 2> /dev/null > /dev/null
+rm -rf "$homedir/message.txt" "$homedir/message.sig"
+success
+
+rm -rf "$homedir/message.txt"
+
+echo -n "Encrypt, and decrypt after reimporting"
+test_gpg --import < "$homedir/key.asc"
+echo "Message - $VALUE" > "$homedir/message.txt"
 test_gpg --trust-model always --recipient "$REALNAME" --encrypt "$homedir/message.txt"
-test_gpg --batch --yes --delete-secret-keys "$KEYID"
-test_gpg --batch --yes --delete-keys "$KEYID"
+delete_keys "$KEYID"
 echo "$BIP_39_1" | ./target/debug/bip39gpg -u "$USERID" | tee "$homedir/key.asc" | test_gpg --import
 rm -rf "$homedir/message.txt"
 test_gpg --decrypt "$homedir/message.txt.gpg" | grep -q "Message - $VALUE" || die "Message incorrectly decrypted"
+delete_keys "$KEYID"
 success
