@@ -366,17 +366,31 @@ struct PGPContext {
     metadata: PGPLiteralPacket,
 }
 
-fn output_pgp_packets<W: Write>(context: &PGPContext, mut out: BufWriter<W>) -> Result<()> {
+enum OutputKeys {
+    SignKey,
+    SignAndEncryptionKey,
+}
+
+fn output_pgp_packets<W: Write>(
+    context: &PGPContext,
+    output_keys: OutputKeys,
+    mut out: BufWriter<W>,
+) -> Result<()> {
     let mut buffer = Cursor::new(Vec::new());
     context.sign_key.secret_as_packet(&mut buffer)?;
     context.user_id.as_packet(&mut buffer)?;
     context
         .sign_key
         .self_sign_as_packet(&context.user_id, &mut buffer)?;
-    context.encrypt_key.secret_as_packet(&mut buffer)?;
-    context
-        .sign_key
-        .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
+    match output_keys {
+        OutputKeys::SignAndEncryptionKey => {
+            context.encrypt_key.secret_as_packet(&mut buffer)?;
+            context
+                .sign_key
+                .bind_key_as_packet(&context.encrypt_key, &mut buffer)?;
+        }
+        _ => {}
+    }
     context.metadata.as_packet(&mut buffer)?;
     if let Err(err) = out.write_all(&buffer.get_ref()) {
         Err(Box::new(err))
@@ -425,6 +439,10 @@ struct Args {
     /// Timestamp (in seconds) for the dates. If unset, use the default 1231006505.
     #[clap(short, long)]
     timestamp: Option<u32>,
+
+    /// Output encryption key as well as sign key.
+    #[clap(short, long)]
+    subkey: Option<bool>,
 }
 
 fn main() -> Result<()> {
@@ -442,14 +460,19 @@ fn main() -> Result<()> {
         args.timestamp.unwrap_or(TIMESTAMP),
     )
     .expect("Could not build OpenPGP keys");
+    let output_keys = if args.subkey.unwrap_or(true) {
+        OutputKeys::SignAndEncryptionKey
+    } else {
+        OutputKeys::SignKey
+    };
     if let Some(filename) = args.filename {
         let output = std::fs::File::open(&filename);
         if let Err(err) = output {
             eprintln!("Cannot open output file {}: {}", filename, err);
             std::process::exit(1);
         }
-        output_pgp_packets(&context, BufWriter::new(&mut output.unwrap()))
+        output_pgp_packets(&context, output_keys, BufWriter::new(&mut output.unwrap()))
     } else {
-        output_pgp_packets(&context, BufWriter::new(std::io::stdout()))
+        output_pgp_packets(&context, output_keys, BufWriter::new(std::io::stdout()))
     }
 }
