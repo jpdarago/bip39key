@@ -13,4 +13,6 @@ mnemonic.
 
 ## Acknowledgements
 
-A lot of the implementation is based on [passphrase2pgp](github.com/skeeto/passphrase2pgp), check that project out!.
+A lot of the implementation is based on [passphrase2pgp](https://github.com/skeeto/passphrase2pgp)
+
+Check that project out!
