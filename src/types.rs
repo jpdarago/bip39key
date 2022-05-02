@@ -49,3 +49,49 @@ impl EncryptKey {
         })
     }
 }
+
+pub struct Context {
+    pub user_id: UserId,
+    pub sign_key: SignKey,
+    pub encrypt_key: EncryptKey,
+    pub metadata: Comment,
+}
+
+impl Context {
+    pub fn new(user_id: &str, seed: &[u8], timestamp_secs: u32) -> Result<Context> {
+        // Derive 64 bytes by running Argon with the user id as salt.
+        let config = argon2::Config {
+            variant: argon2::Variant::Argon2id,
+            version: argon2::Version::Version13,
+            mem_cost: 32 * 1024,
+            time_cost: 8,
+            lanes: 4,
+            thread_mode: argon2::ThreadMode::Parallel,
+            secret: &[],
+            ad: &[],
+            hash_length: 64,
+        };
+        let secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
+        Ok(Context {
+            user_id: UserId {
+                user_id: user_id.to_string(),
+            },
+            sign_key: SignKey::new(&secret_key_bytes[..32], timestamp_secs)?,
+            encrypt_key: EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?,
+            metadata: Comment {
+                timestamp_secs,
+                data: format!(
+                    "Created by {} version {} with Argon settings {:?}",
+                    env!("CARGO_PKG_NAME"),
+                    env!("CARGO_PKG_VERSION"),
+                    &config
+                ),
+            },
+        })
+    }
+}
+
+pub enum OutputKeys {
+    SignKey,
+    SignAndEncryptionKey,
+}

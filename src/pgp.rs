@@ -14,20 +14,20 @@ pub enum PacketType {
     LiteralData,
 }
 
-pub fn hash_u16(n: u16, hasher: &mut sha2::Sha256) {
+fn hash_u16(n: u16, hasher: &mut sha2::Sha256) {
     let mut buf = [0; 2];
     BigEndian::write_u16(&mut buf, n);
     hasher.update(&buf);
 }
 
-pub fn hash_u32(n: u32, hasher: &mut sha2::Sha256) {
+fn hash_u32(n: u32, hasher: &mut sha2::Sha256) {
     let mut buf = [0; 4];
     BigEndian::write_u32(&mut buf, n);
     hasher.update(&buf);
 }
 
 // Encode the contents of the byte buffer as a PGP packet of the given type.
-pub fn output_as_packet(
+fn output_as_packet(
     packet_type: PacketType,
     packet_bytes: &[u8],
     out: &mut ByteCursor,
@@ -62,7 +62,7 @@ pub fn output_as_packet(
 }
 
 // Encode buffer as MPI (Multi Precision Intenger), defined in OpenPGP RFC 4880.
-pub fn mpi_encode(data: &[u8]) -> Vec<u8> {
+fn mpi_encode(data: &[u8]) -> Vec<u8> {
     let mut slice = data;
     // Remove all leading zeroes.
     while !slice.is_empty() && slice[0] == 0 {
@@ -80,7 +80,7 @@ pub fn mpi_encode(data: &[u8]) -> Vec<u8> {
 }
 
 // Returns the PGP checksum for a data buffer, defined in OpenPGP RFC 4880.
-pub fn checksum(buffer: &[u8]) -> u16 {
+fn checksum(buffer: &[u8]) -> u16 {
     let mut result: u32 = 0;
     for &byte in buffer {
         result = (result + (byte as u32)) % 65536;
@@ -89,11 +89,11 @@ pub fn checksum(buffer: &[u8]) -> u16 {
 }
 
 // Outputs the user id as a PGP user id packet.
-pub fn output_user_id(user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
+fn output_user_id(user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
     output_as_packet(PacketType::UserId, user_id.user_id.as_bytes(), out)
 }
 
-pub fn output_comment(comment: &Comment, out: &mut ByteCursor) -> Result<()> {
+fn output_comment(comment: &Comment, out: &mut ByteCursor) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     // Text data as UTF-8.
     cursor.write_all(&[0x75])?;
@@ -123,7 +123,7 @@ fn public_subkey_payload(key: &EncryptKey) -> Result<Vec<u8>> {
     Ok(cursor.into_inner())
 }
 
-pub fn output_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> Result<()> {
+fn output_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     let payload = public_subkey_payload(key)?;
     cursor.write_all(&payload)?;
@@ -161,7 +161,7 @@ fn output_public_key(key: &SignKey, out: &mut ByteCursor) -> Result<()> {
     output_as_packet(PacketType::PublicSignKey, &payload, out)
 }
 
-pub fn output_secret_key(key: &SignKey, out: &mut ByteCursor) -> Result<()> {
+fn output_secret_key(key: &SignKey, out: &mut ByteCursor) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     let payload = public_key_payload(key)?;
     cursor.write_all(&payload)?;
@@ -185,7 +185,7 @@ fn key_fingerprint(key: &SignKey) -> Result<Vec<u8>> {
     Ok(hasher.finalize().to_vec())
 }
 
-pub fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
+fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
     let mut packet_cursor = ByteCursor::new(Vec::with_capacity(256));
     // Version 4 signature.
     // Positive certification signature (0x13).
@@ -240,11 +240,7 @@ pub fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCurs
     output_as_packet(PacketType::Signature, packet_cursor.get_ref(), out)
 }
 
-pub fn output_subkey_signature(
-    key: &SignKey,
-    subkey: &EncryptKey,
-    out: &mut ByteCursor,
-) -> Result<()> {
+fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCursor) -> Result<()> {
     let mut packet_cursor = ByteCursor::new(Vec::with_capacity(256));
     // Version 4 signature.
     // Subkey binding signature (0x18).
@@ -298,4 +294,25 @@ pub fn output_subkey_signature(
     packet_cursor.write_all(&mpi_encode(&signature[..32]))?;
     packet_cursor.write_all(&mpi_encode(&signature[32..]))?;
     output_as_packet(PacketType::Signature, packet_cursor.get_ref(), out)
+}
+
+pub fn output_as_packets<W: Write>(
+    context: &Context,
+    output_keys: OutputKeys,
+    mut out: std::io::BufWriter<W>,
+) -> Result<()> {
+    let mut buffer = ByteCursor::new(Vec::new());
+    output_secret_key(&context.sign_key, &mut buffer)?;
+    output_user_id(&context.user_id, &mut buffer)?;
+    output_self_signature(&context.sign_key, &context.user_id, &mut buffer)?;
+    if let OutputKeys::SignAndEncryptionKey = output_keys {
+        output_secret_subkey(&context.encrypt_key, &mut buffer)?;
+        output_subkey_signature(&context.sign_key, &context.encrypt_key, &mut buffer)?;
+    }
+    output_comment(&context.metadata, &mut buffer)?;
+    if let Err(err) = out.write_all(buffer.get_ref()) {
+        Err(Box::new(err))
+    } else {
+        Ok(())
+    }
 }
