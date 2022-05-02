@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 077
 
 export REALNAME="Satoshi Nakamoto"
 export EMAIL="satoshin@gmx.com"
@@ -8,7 +9,6 @@ export USERID="$REALNAME <$EMAIL>"
 export KEYID="E3CF60B9A20DC3759FADCA2157E57457587213E6"
 
 export BIP_39_1="legal winner thank year wave sausage worth useful legal winner thank yellow"
-export BIP_39_2="letter advice cage absurd amount doctor acoustic avoid letter advice cage above"
 
 # Set up a separate environment for GPG.
 homedir="$(mktemp -d homedir.XXXXXX)"
@@ -79,4 +79,9 @@ echo "$BIP_39_1" | ./target/debug/bip39gpg -u "$USERID" | tee "$homedir/key.asc"
 rm -rf "$homedir/message.txt"
 test_gpg --decrypt "$homedir/message.txt.gpg" | grep -q "Message - $VALUE" || die "Message incorrectly decrypted"
 delete_keys "$KEYID"
+success
+
+echo -n "SSH key"
+echo "$BIP_39_1" | ./target/debug/bip39gpg -u "$USERID" -f ssh > "$homedir/id_ed25519"
+ssh-keygen -v -y -P '' -f "$homedir/id_ed25519" 2>&1 > /dev/null || die "Invalid key"
 success

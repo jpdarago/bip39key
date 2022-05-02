@@ -15,3 +15,5 @@ sha1 = "0.10.0"
 tiny-bip39 = "0.8.2"
 clap = { version = "3.1.13", features = ["derive"] }
 rust-argon2 = "1.0.0"
+base64 = "0.13.0"
+textwrap = "0.7"

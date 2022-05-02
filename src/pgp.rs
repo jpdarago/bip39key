@@ -299,7 +299,7 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
 pub fn output_as_packets<W: Write>(
     context: &Context,
     output_keys: OutputKeys,
-    mut out: std::io::BufWriter<W>,
+    out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     let mut buffer = ByteCursor::new(Vec::new());
     output_secret_key(&context.sign_key, &mut buffer)?;

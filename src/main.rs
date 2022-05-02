@@ -1,4 +1,5 @@
 mod pgp;
+mod ssh;
 mod types;
 
 use crate::types::*;
@@ -12,6 +13,12 @@ use std::io::BufWriter;
 // database.
 const TIMESTAMP: u32 = 1231006505;
 
+#[derive(Clone, clap::ArgEnum, Debug)]
+enum OutputFormat {
+    PGP,
+    SSH,
+}
+
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -21,7 +28,7 @@ struct Args {
 
     /// Filename where to output the keys, if not present then write to stdout.
     #[clap(short, long)]
-    filename: Option<String>,
+    output_filename: Option<String>,
 
     /// Timestamp (in seconds) for the dates. If unset, use the default 1231006505.
     #[clap(short, long)]
@@ -30,6 +37,27 @@ struct Args {
     /// Output encryption key as well as sign key.
     #[clap(short, long)]
     subkey: Option<bool>,
+
+    /// Output format: SSH or PGP.
+    #[clap(short, long, arg_enum, default_value = "pgp")]
+    format: OutputFormat,
+}
+
+fn write_keys<W: std::io::Write>(
+    format: OutputFormat,
+    output_keys: OutputKeys,
+    context: &Context,
+    mut writer: BufWriter<W>,
+) -> Result<()> {
+    match format {
+        OutputFormat::PGP => {
+            pgp::output_as_packets(&context, output_keys, &mut writer)?;
+        }
+        OutputFormat::SSH => {
+            ssh::output_secret_as_pem(&context, &mut writer)?;
+        }
+    };
+    Ok(())
 }
 
 fn main() -> Result<()> {
@@ -57,14 +85,24 @@ fn main() -> Result<()> {
     } else {
         OutputKeys::SignKey
     };
-    if let Some(filename) = args.filename {
+    if let Some(filename) = args.output_filename {
         let output = std::fs::File::open(&filename);
         if let Err(err) = output {
             eprintln!("Cannot open output file {}: {}", filename, err);
             std::process::exit(1);
         }
-        pgp::output_as_packets(&context, output_keys, BufWriter::new(&mut output.unwrap()))
+        write_keys(
+            args.format,
+            output_keys,
+            &context,
+            BufWriter::new(&mut output.unwrap()),
+        )
     } else {
-        pgp::output_as_packets(&context, output_keys, BufWriter::new(std::io::stdout()))
+        write_keys(
+            args.format,
+            output_keys,
+            &context,
+            BufWriter::new(std::io::stdout()),
+        )
     }
 }
