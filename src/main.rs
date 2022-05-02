@@ -13,7 +13,7 @@ use std::io::BufWriter;
 // database.
 const TIMESTAMP: u32 = 1231006505;
 
-#[derive(Clone, clap::ArgEnum, Debug)]
+#[derive(PartialEq, Eq, Clone, clap::ArgEnum, Debug)]
 enum OutputFormat {
     Pgp,
     Ssh,
@@ -34,9 +34,9 @@ struct Args {
     #[clap(short, long)]
     timestamp: Option<u32>,
 
-    /// Output encryption key as well as sign key.
+    /// Only output the sign key for PGP.
     #[clap(short, long)]
-    subkey: Option<bool>,
+    just_signkey: bool,
 
     /// Output format: SSH or PGP.
     #[clap(short, long, arg_enum, default_value = "pgp")]
@@ -62,6 +62,10 @@ fn write_keys<W: std::io::Write>(
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    if args.just_signkey && args.format == OutputFormat::Ssh {
+        eprintln!("Subkey option (--subkey/-s) only works with PGP output format.");
+        std::process::exit(1);
+    }
     let mut phrase = String::new();
     std::io::stdin().read_line(&mut phrase)?;
     let mnemonic = Mnemonic::from_phrase(phrase.trim(), Language::English);
@@ -80,10 +84,10 @@ fn main() -> Result<()> {
     }
     let context = Context::new(&args.user_id, entropy, args.timestamp.unwrap_or(TIMESTAMP))
         .expect("Could not build OpenPGP keys");
-    let output_keys = if args.subkey.unwrap_or(true) {
-        OutputKeys::SignAndEncryptionKey
-    } else {
+    let output_keys = if args.just_signkey {
         OutputKeys::SignKey
+    } else {
+        OutputKeys::SignAndEncryptionKey
     };
     if let Some(filename) = args.output_filename {
         let output = std::fs::File::open(&filename);
