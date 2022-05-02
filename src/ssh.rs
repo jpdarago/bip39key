@@ -50,7 +50,10 @@ pub fn output_secret_as_pem<W: Write>(
     private_payload.write_all(&context.sign_key.keypair.secret.as_bytes()[..32])?;
     private_payload.write_all(context.sign_key.keypair.public.as_bytes())?;
     put_bytes(private_payload.get_mut(), &mut private_key)?;
-    put_string(&context.user_id.user_id, &mut private_key)?;
+    let mut comment = context.user_id.user_id.clone();
+    comment.push_str(" - ");
+    comment.push_str(&context.metadata.data);
+    put_string(&comment, &mut private_key)?;
     // Pad to 8 bytes.
     let content = private_key.get_mut();
     for i in 1..8 {
