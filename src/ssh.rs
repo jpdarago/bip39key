@@ -10,7 +10,7 @@ fn put_u32(v: u32, out: &mut ByteCursor) -> Result<()> {
 
 fn put_bytes(s: &[u8], out: &mut ByteCursor) -> Result<()> {
     put_u32(s.len().try_into()?, out)?;
-    out.write_all(&s)?;
+    out.write_all(s)?;
     Ok(())
 }
 
@@ -47,7 +47,7 @@ pub fn output_secret_as_pem<W: Write>(
     put_string("ssh-ed25519", &mut private_key)?;
     put_bytes(context.sign_key.keypair.public.as_bytes(), &mut private_key)?;
     let mut private_payload = ByteCursor::new(Vec::with_capacity(64));
-    private_payload.write_all(&context.sign_key.keypair.secret.as_bytes()[..32])?;
+    private_payload.write_all(context.sign_key.keypair.secret.as_bytes())?;
     private_payload.write_all(context.sign_key.keypair.public.as_bytes())?;
     put_bytes(private_payload.get_mut(), &mut private_key)?;
     let mut comment = context.user_id.user_id.clone();

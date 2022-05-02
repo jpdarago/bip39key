@@ -15,8 +15,8 @@ const TIMESTAMP: u32 = 1231006505;
 
 #[derive(Clone, clap::ArgEnum, Debug)]
 enum OutputFormat {
-    PGP,
-    SSH,
+    Pgp,
+    Ssh,
 }
 
 #[derive(Parser, Debug)]
@@ -50,11 +50,11 @@ fn write_keys<W: std::io::Write>(
     mut writer: BufWriter<W>,
 ) -> Result<()> {
     match format {
-        OutputFormat::PGP => {
-            pgp::output_as_packets(&context, output_keys, &mut writer)?;
+        OutputFormat::Pgp => {
+            pgp::output_as_packets(context, output_keys, &mut writer)?;
         }
-        OutputFormat::SSH => {
-            ssh::output_secret_as_pem(&context, &mut writer)?;
+        OutputFormat::Ssh => {
+            ssh::output_secret_as_pem(context, &mut writer)?;
         }
     };
     Ok(())
