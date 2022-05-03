@@ -57,6 +57,13 @@ test_gpg --list-keys | grep -q "$KEYID" || die "Key with Key ID $KEYID not found
 delete_keys "$KEYID"
 success
 
+echo -n "Import armored key into PGP"
+echo "$BIP_39_1" | ./target/debug/bip39key -u "$USERID" -a | tee "$homedir/key.armored.asc" | test_gpg --import
+test_gpg --list-keys | grep -q "$USERID" || die "Key for $USERID not found"
+test_gpg --list-keys | grep -q "$KEYID" || die "Key with Key ID $KEYID not found"
+delete_keys "$KEYID"
+success
+
 echo -n "Verify signatures"
 test_gpg --import < "$homedir/key.asc"
 export VALUE="$RANDOM"

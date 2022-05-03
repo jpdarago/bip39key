@@ -316,3 +316,45 @@ pub fn output_as_packets<W: Write>(
         Ok(())
     }
 }
+
+fn armor_checksum(bytes: &[u8]) -> u32 {
+    let mut crc: u32 = 0xB704CE;
+    for v in bytes {
+        crc ^= (*v as u32) << 16;
+        for _ in 0..8 {
+            crc <<= 1;
+            if (crc & 0x1000000) != 0 {
+                crc ^= 0x1864CFB;
+            }
+        }
+    }
+    crc & 0xFFFFFF
+}
+
+pub fn output_armored<W: Write>(
+    context: &Context,
+    output_keys: OutputKeys,
+    out: &mut std::io::BufWriter<W>,
+) -> Result<()> {
+    out.write_all(b"-----BEGIN PGP PRIVATE KEY BLOCK-----\n")?;
+    out.write_all(b"Comment: ")?;
+    out.write_all(context.metadata.data.as_bytes())?;
+    out.write_all(b"\n\n")?;
+    let mut packets_cursor = ByteCursor::new(vec![]);
+    let mut buffer = std::io::BufWriter::new(&mut packets_cursor);
+    output_as_packets(&context, output_keys, &mut buffer)?;
+    buffer.flush()?;
+    let packets = buffer.get_mut().get_mut();
+    out.write_all(textwrap::fill(&base64::encode(&packets), 70).as_bytes())?;
+    let mut checksum_cursor = ByteCursor::new(vec![]);
+    let checksum = armor_checksum(&packets);
+    checksum_cursor.write(&[
+        ((checksum >> 16) & 0xFF) as u8,
+        ((checksum >> 8) & 0xFF) as u8,
+        (checksum & 0xFF) as u8,
+    ])?;
+    out.write_all(b"\n")?;
+    out.write_all(base64::encode(checksum_cursor.get_ref()).as_bytes())?;
+    out.write_all(b"\n-----END PGP PRIVATE KEY BLOCK-----\n")?;
+    Ok(())
+}

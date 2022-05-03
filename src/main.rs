@@ -41,17 +41,29 @@ struct Args {
     /// Output format: SSH or PGP.
     #[clap(short, long, arg_enum, default_value = "pgp")]
     format: OutputFormat,
+
+    /// Output as armored.
+    #[clap(short, long)]
+    armor: bool,
 }
 
 fn write_keys<W: std::io::Write>(
-    format: OutputFormat,
-    output_keys: OutputKeys,
+    args: &Args,
     context: &Context,
     mut writer: BufWriter<W>,
 ) -> Result<()> {
-    match format {
+    let output_keys = if args.just_signkey {
+        OutputKeys::SignKey
+    } else {
+        OutputKeys::SignAndEncryptionKey
+    };
+    match args.format {
         OutputFormat::Pgp => {
-            pgp::output_as_packets(context, output_keys, &mut writer)?;
+            if args.armor {
+                pgp::output_armored(context, output_keys, &mut writer)?;
+            } else {
+                pgp::output_as_packets(context, output_keys, &mut writer)?;
+            }
         }
         OutputFormat::Ssh => {
             ssh::output_secret_as_pem(context, &mut writer)?;
@@ -84,29 +96,14 @@ fn main() -> Result<()> {
     }
     let context = Context::new(&args.user_id, entropy, args.timestamp.unwrap_or(TIMESTAMP))
         .expect("Could not build OpenPGP keys");
-    let output_keys = if args.just_signkey {
-        OutputKeys::SignKey
-    } else {
-        OutputKeys::SignAndEncryptionKey
-    };
-    if let Some(filename) = args.output_filename {
+    if let Some(filename) = &args.output_filename {
         let output = std::fs::File::open(&filename);
         if let Err(err) = output {
             eprintln!("Cannot open output file {}: {}", filename, err);
             std::process::exit(1);
         }
-        write_keys(
-            args.format,
-            output_keys,
-            &context,
-            BufWriter::new(&mut output.unwrap()),
-        )
+        write_keys(&args, &context, BufWriter::new(&mut output.unwrap()))
     } else {
-        write_keys(
-            args.format,
-            output_keys,
-            &context,
-            BufWriter::new(std::io::stdout()),
-        )
+        write_keys(&args, &context, BufWriter::new(std::io::stdout()))
     }
 }
