@@ -39,7 +39,7 @@ delete_keys() {
 
 import_key() {
     local bip39="$1"
-    echo "$bip39" | ./target/debug/bip39gpg -u "$USERID" | tee "$homedir/key.asc" | test_gpg --import
+    echo "$bip39" | ./target/debug/bip39key -u "$USERID" | tee "$homedir/key.asc" | test_gpg --import
 }
 
 echo -n "Building project"
