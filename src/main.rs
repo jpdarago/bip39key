@@ -78,6 +78,10 @@ fn main() -> Result<()> {
         eprintln!("Subkey option (--subkey/-s) only works with PGP output format.");
         std::process::exit(1);
     }
+    if args.armor && args.format == OutputFormat::Ssh {
+        eprintln!("Armor option (--armor/-a) only works with PGP output format.");
+        std::process::exit(1);
+    }
     let mut phrase = String::new();
     std::io::stdin().read_line(&mut phrase)?;
     let mnemonic = Mnemonic::from_phrase(phrase.trim(), Language::English);
