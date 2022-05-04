@@ -84,7 +84,6 @@ impl Context {
                     "Created by {} version {}",
                     env!("CARGO_PKG_NAME"),
                     env!("CARGO_PKG_VERSION"),
-                    &config
                 ),
             },
         })
