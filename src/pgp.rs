@@ -343,13 +343,13 @@ pub fn output_armored<W: Write>(
     out.write_all(b"\n\n")?;
     let mut packets_cursor = ByteCursor::new(vec![]);
     let mut buffer = std::io::BufWriter::new(&mut packets_cursor);
-    output_as_packets(&context, output_keys, &mut buffer)?;
+    output_as_packets(context, output_keys, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
     out.write_all(textwrap::fill(&base64::encode(&packets), 70).as_bytes())?;
     let mut checksum_cursor = ByteCursor::new(vec![]);
-    let checksum = armor_checksum(&packets);
-    checksum_cursor.write(&[
+    let checksum = armor_checksum(packets);
+    checksum_cursor.write_all(&[
         ((checksum >> 16) & 0xFF) as u8,
         ((checksum >> 8) & 0xFF) as u8,
         (checksum & 0xFF) as u8,
