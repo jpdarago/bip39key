@@ -40,40 +40,41 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-        toolchain: stable
-        override: true
-        components: rustfmt, clippy
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
 
-    - name: Run cargo fmt
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: --all -- --check
+      - name: Run cargo fmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
 
-    - name: Run cargo clippy
-      uses: actions-rs/cargo@v1
-      with:
-        command: clippy
-        args: -- -D warnings
+      - name: Run cargo clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
 
-tests:
-  name: Tests
-  runs-on: ubuntu-latest
-  steps:
-    - name: Checkout sources
-      uses: actions/checkout@v2
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
 
-    - name: Install stable toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-    - name: Setup Python
+      - name: Setup Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.
+          python-version: 3.8
+      
       - name: Run tests
         run: |
           python3 test.py
