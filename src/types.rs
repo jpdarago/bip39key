@@ -81,7 +81,7 @@ impl Context {
             metadata: Comment {
                 timestamp_secs,
                 data: format!(
-                    "Created by {} version {} with Argon settings {:?}",
+                    "Created by {} version {}",
                     env!("CARGO_PKG_NAME"),
                     env!("CARGO_PKG_VERSION"),
                     &config
