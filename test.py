@@ -12,10 +12,12 @@ def run_command(cmd, stdinput=None):
     ) as proc:
         try:
             if isinstance(stdinput, str):
-                stdinput=str.encode(stdinput)
+                stdinput = str.encode(stdinput)
             stdout, stderr = proc.communicate(input=stdinput, timeout=15)
             if proc.returncode != 0:
-                raise Exception("{} did not finish successfully: {}".format(cmd, stderr))
+                raise Exception(
+                    "{} did not finish successfully: {}".format(cmd, stderr)
+                )
             return (stdout, stderr)
         except subprocess.TimeoutExpired:
             proc.kill()
@@ -48,8 +50,8 @@ def parse_gpg_keys(rawstdout):
     stdout = bytes.decode(rawstdout, "utf-8")
     result = {}
     for line in stdout.splitlines():
-        head, *tail = line.split(':')
-        if head != 'tru':
+        head, *tail = line.split(":")
+        if head != "tru":
             cols = []
             for part in tail:
                 if part:
@@ -63,7 +65,7 @@ def run_ssh_keygen(stdin):
     try:
         f.write(stdin)
         f.close()
-        cmd = ['ssh-keygen', '-v', '-y', '-P', '', '-f', f.name]
+        cmd = ["ssh-keygen", "-v", "-y", "-P", "", "-f", f.name]
         return run_command(cmd)
     finally:
         os.unlink(f.name)
@@ -93,16 +95,17 @@ REALNAME = "Satoshi Nakamoto"
 EMAIL = "satoshin@gmx.com"
 USERID = "{} <{}>".format(REALNAME, EMAIL)
 
+
 class Bip39PGPTest(unittest.TestCase):
     def check_key(self, keys):
-        self.assertEqual(keys['pub'][7], 'ed25519')
-        self.assertEqual(keys['fpr'], ['7505908A4886895E5C7C06BFF63FE83459AACAC0'])
-        self.assertEqual(keys['uid'][1], '1231006505')
-        self.assertEqual(keys['uid'][3], USERID)
-        self.assertEqual(keys['sub'][3], 'F63FE83459AACAC0')
-        self.assertEqual(keys['sub'][4], '1231006505')
-        self.assertEqual(keys['sub'][5], 'e')
-        self.assertEqual(keys['sub'][6], 'cv25519')
+        self.assertEqual(keys["pub"][7], "ed25519")
+        self.assertEqual(keys["fpr"], ["7505908A4886895E5C7C06BFF63FE83459AACAC0"])
+        self.assertEqual(keys["uid"][1], "1231006505")
+        self.assertEqual(keys["uid"][3], USERID)
+        self.assertEqual(keys["sub"][3], "F63FE83459AACAC0")
+        self.assertEqual(keys["sub"][4], "1231006505")
+        self.assertEqual(keys["sub"][5], "e")
+        self.assertEqual(keys["sub"][6], "cv25519")
 
     def test_gpg_raw(self):
         with GPG() as gpg:
@@ -123,6 +126,7 @@ class Bip39PGPTest(unittest.TestCase):
     def test_ssh(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh"])
         run_ssh_keygen(stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
