@@ -337,6 +337,7 @@ pub fn output_armored<W: Write>(
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     out.write_all(b"-----BEGIN PGP PRIVATE KEY BLOCK-----\n")?;
+    out.write_all(b"Version: GnuPG v2\n")?;
     out.write_all(b"Comment: ")?;
     out.write_all(context.metadata.data.as_bytes())?;
     out.write_all(b"\n\n")?;
