@@ -70,6 +70,11 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Run cargo build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
