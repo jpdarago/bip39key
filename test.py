@@ -72,7 +72,7 @@ def run_ssh_keygen(stdin):
 
 
 def run_bip39key(bip39, userid, flags=[]):
-    cmd = ["./target/debug/bip39key", "-u", userid] + flags
+    cmd = ["./target/release/bip39key", "-u", userid] + flags
     return run_command(cmd, " ".join(bip39))
 
 
