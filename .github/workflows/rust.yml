@@ -73,7 +73,8 @@ jobs:
       - name: Run cargo build
         uses: actions-rs/cargo@v1
         with:
-          command: build --release
+          command: build
+          args: --release
 
       - name: Setup Python
         uses: actions/setup-python@v2
