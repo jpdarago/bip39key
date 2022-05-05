@@ -305,8 +305,8 @@ pub fn output_as_packets<W: Write>(
     output_user_id(&context.user_id, &mut buffer)?;
     output_self_signature(&context.sign_key, &context.user_id, &mut buffer)?;
     if let Some(encrypt_key) = &context.encrypt_key {
-        output_secret_subkey(&encrypt_key, &mut buffer)?;
-        output_subkey_signature(&context.sign_key, &encrypt_key, &mut buffer)?;
+        output_secret_subkey(encrypt_key, &mut buffer)?;
+        output_subkey_signature(&context.sign_key, encrypt_key, &mut buffer)?;
     }
     output_comment(&context.metadata, &mut buffer)?;
     if let Err(err) = out.write_all(buffer.get_ref()) {
