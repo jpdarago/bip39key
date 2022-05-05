@@ -52,17 +52,12 @@ fn write_keys<W: std::io::Write>(
     context: &Context,
     mut writer: BufWriter<W>,
 ) -> Result<()> {
-    let output_keys = if args.just_signkey {
-        OutputKeys::SignKey
-    } else {
-        OutputKeys::SignAndEncryptionKey
-    };
     match args.format {
         OutputFormat::Pgp => {
             if args.armor {
-                pgp::output_armored(context, output_keys, &mut writer)?;
+                pgp::output_armored(context, &mut writer)?;
             } else {
-                pgp::output_as_packets(context, output_keys, &mut writer)?;
+                pgp::output_as_packets(context, &mut writer)?;
             }
         }
         OutputFormat::Ssh => {
@@ -98,8 +93,13 @@ fn main() -> Result<()> {
         );
         std::process::exit(1);
     }
-    let context = Context::new(&args.user_id, entropy, args.timestamp.unwrap_or(TIMESTAMP))
-        .expect("Could not build OpenPGP keys");
+    let context = Context::new(
+        &args.user_id,
+        entropy,
+        args.timestamp.unwrap_or(TIMESTAMP),
+        !args.just_signkey,
+    )
+    .expect("Could not build OpenPGP keys");
     if let Some(filename) = &args.output_filename {
         let output = std::fs::File::open(&filename);
         if let Err(err) = output {

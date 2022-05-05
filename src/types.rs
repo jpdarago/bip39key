@@ -53,12 +53,17 @@ impl EncryptKey {
 pub struct Context {
     pub user_id: UserId,
     pub sign_key: SignKey,
-    pub encrypt_key: EncryptKey,
+    pub encrypt_key: Option<EncryptKey>,
     pub metadata: Comment,
 }
 
 impl Context {
-    pub fn new(user_id: &str, seed: &[u8], timestamp_secs: u32) -> Result<Context> {
+    pub fn new(
+        user_id: &str,
+        seed: &[u8],
+        timestamp_secs: u32,
+        generate_encrypt_key: bool,
+    ) -> Result<Context> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let config = argon2::Config {
             variant: argon2::Variant::Argon2id,
@@ -72,12 +77,17 @@ impl Context {
             hash_length: 64,
         };
         let secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
+        let encrypt_key = if generate_encrypt_key {
+            Some(EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?)
+        } else {
+            None
+        };
         Ok(Context {
             user_id: UserId {
                 user_id: user_id.to_string(),
             },
             sign_key: SignKey::new(&secret_key_bytes[..32], timestamp_secs)?,
-            encrypt_key: EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?,
+            encrypt_key,
             metadata: Comment {
                 timestamp_secs,
                 data: format!(
@@ -88,9 +98,4 @@ impl Context {
             },
         })
     }
-}
-
-pub enum OutputKeys {
-    SignKey,
-    SignAndEncryptionKey,
 }

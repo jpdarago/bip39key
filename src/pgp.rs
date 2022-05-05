@@ -298,16 +298,15 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
 
 pub fn output_as_packets<W: Write>(
     context: &Context,
-    output_keys: OutputKeys,
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     let mut buffer = ByteCursor::new(Vec::new());
     output_secret_key(&context.sign_key, &mut buffer)?;
     output_user_id(&context.user_id, &mut buffer)?;
     output_self_signature(&context.sign_key, &context.user_id, &mut buffer)?;
-    if let OutputKeys::SignAndEncryptionKey = output_keys {
-        output_secret_subkey(&context.encrypt_key, &mut buffer)?;
-        output_subkey_signature(&context.sign_key, &context.encrypt_key, &mut buffer)?;
+    if let Some(encrypt_key) = &context.encrypt_key {
+        output_secret_subkey(&encrypt_key, &mut buffer)?;
+        output_subkey_signature(&context.sign_key, &encrypt_key, &mut buffer)?;
     }
     output_comment(&context.metadata, &mut buffer)?;
     if let Err(err) = out.write_all(buffer.get_ref()) {
@@ -331,11 +330,7 @@ fn armor_checksum(bytes: &[u8]) -> u32 {
     crc & 0xFFFFFF
 }
 
-pub fn output_armored<W: Write>(
-    context: &Context,
-    output_keys: OutputKeys,
-    out: &mut std::io::BufWriter<W>,
-) -> Result<()> {
+pub fn output_armored<W: Write>(context: &Context, out: &mut std::io::BufWriter<W>) -> Result<()> {
     out.write_all(b"-----BEGIN PGP PRIVATE KEY BLOCK-----\n")?;
     out.write_all(b"Version: GnuPG v2\n")?;
     out.write_all(b"Comment: ")?;
@@ -343,7 +338,7 @@ pub fn output_armored<W: Write>(
     out.write_all(b"\n\n")?;
     let mut packets_cursor = ByteCursor::new(vec![]);
     let mut buffer = std::io::BufWriter::new(&mut packets_cursor);
-    output_as_packets(context, output_keys, &mut buffer)?;
+    output_as_packets(context, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
     out.write_all(textwrap::fill(&base64::encode(&packets), 70).as_bytes())?;
