@@ -70,9 +70,9 @@ impl Context {
         let config = argon2::Config {
             variant: argon2::Variant::Argon2id,
             version: argon2::Version::Version13,
-            mem_cost: 32 * 1024,
-            time_cost: 8,
-            lanes: 4,
+            mem_cost: 64 * 1024,
+            time_cost: 32,
+            lanes: 8,
             thread_mode: argon2::ThreadMode::Parallel,
             secret: &[],
             ad: &[],

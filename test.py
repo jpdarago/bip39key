@@ -97,7 +97,7 @@ USERID = "{} <{}>".format(REALNAME, EMAIL)
 
 
 class Bip39PGPTest(unittest.TestCase):
-    def check_key(self, keys, fp="7505908A4886895E5C7C06BFF63FE83459AACAC0", subfp="F63FE83459AACAC0"):
+    def check_key(self, keys, fp="A10531F7669DDD0FA50B0A00656C58480711970B", subfp="656C58480711970B"):
         self.assertEqual(keys["pub"][7], "ed25519")
         self.assertEqual(keys["fpr"], [fp])
         self.assertEqual(keys["uid"][1], "1231006505")
@@ -143,7 +143,7 @@ class Bip39PGPTest(unittest.TestCase):
             gpg.run(["--import"], stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
-            self.check_key(keys, fp="A65A817AB3864CD42C71CB556AA93ACE15264827", subfp="6AA93ACE15264827")
+            self.check_key(keys, fp="973FB9F6845B59C12544D62695C556EA825BA259", subfp="95C556EA825BA259")
 
 
 if __name__ == "__main__":
