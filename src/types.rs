@@ -55,12 +55,14 @@ pub struct Context {
     pub sign_key: SignKey,
     pub encrypt_key: Option<EncryptKey>,
     pub metadata: Comment,
+    pub passphrase: Option<String>,
 }
 
 impl Context {
     pub fn new(
         user_id: &str,
         seed: &[u8],
+        passphrase: &Option<String>,
         timestamp_secs: u32,
         generate_encrypt_key: bool,
     ) -> Result<Context> {
@@ -76,7 +78,16 @@ impl Context {
             ad: &[],
             hash_length: 64,
         };
-        let secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
+        let mut secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
+        if let Some(pass) = &passphrase {
+            // Generate another buffer with Argon for the passphrase and XOR it.
+            let passphrase_bytes = argon2::hash_raw(pass.as_bytes(), user_id.as_bytes(), &config)?;
+            secret_key_bytes = secret_key_bytes
+                .iter()
+                .zip(passphrase_bytes.iter())
+                .map(|(lhs, rhs)| lhs ^ rhs)
+                .collect();
+        }
         let encrypt_key = if generate_encrypt_key {
             Some(EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?)
         } else {
@@ -96,6 +107,7 @@ impl Context {
                     env!("CARGO_PKG_VERSION"),
                 ),
             },
+            passphrase: passphrase.clone(),
         })
     }
 }

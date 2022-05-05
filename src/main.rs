@@ -45,6 +45,10 @@ struct Args {
     /// Output as armored.
     #[clap(short, long)]
     armor: bool,
+
+    /// Optional passphrase. See README.md for details.
+    #[clap(short, long)]
+    passphrase: Option<String>,
 }
 
 fn write_keys<W: std::io::Write>(
@@ -96,6 +100,7 @@ fn main() -> Result<()> {
     let context = Context::new(
         &args.user_id,
         entropy,
+        &args.passphrase,
         args.timestamp.unwrap_or(TIMESTAMP),
         !args.just_signkey,
     )

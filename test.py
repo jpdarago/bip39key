@@ -97,12 +97,12 @@ USERID = "{} <{}>".format(REALNAME, EMAIL)
 
 
 class Bip39PGPTest(unittest.TestCase):
-    def check_key(self, keys):
+    def check_key(self, keys, fp="7505908A4886895E5C7C06BFF63FE83459AACAC0", subfp="F63FE83459AACAC0"):
         self.assertEqual(keys["pub"][7], "ed25519")
-        self.assertEqual(keys["fpr"], ["7505908A4886895E5C7C06BFF63FE83459AACAC0"])
+        self.assertEqual(keys["fpr"], [fp])
         self.assertEqual(keys["uid"][1], "1231006505")
         self.assertEqual(keys["uid"][3], USERID)
-        self.assertEqual(keys["sub"][3], "F63FE83459AACAC0")
+        self.assertEqual(keys["sub"][3], subfp)
         self.assertEqual(keys["sub"][4], "1231006505")
         self.assertEqual(keys["sub"][5], "e")
         self.assertEqual(keys["sub"][6], "cv25519")
@@ -126,6 +126,24 @@ class Bip39PGPTest(unittest.TestCase):
     def test_ssh(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh"])
         run_ssh_keygen(stdout)
+
+    def test_bad_bip39(self):
+        with self.assertRaises(Exception):
+            run_bip39key(['foobarbaz'], USERID, ["-f", "ssh"])
+
+    def test_bad_bip39_checksum(self):
+        mnemonic = BIP39[:]
+        mnemonic[-1] = 'abandon'
+        with self.assertRaises(Exception):
+            run_bip39key(mnemonic, USERID, ["-f", "ssh"])
+
+    def test_gpg_with_passphrase(self):
+        with GPG() as gpg:
+            stdout, stderr = run_bip39key(BIP39, USERID, ["--passphrase", "m4gicp455w0rd"])
+            gpg.run(["--import"], stdout)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.check_key(keys, fp="A65A817AB3864CD42C71CB556AA93ACE15264827", subfp="6AA93ACE15264827")
 
 
 if __name__ == "__main__":
