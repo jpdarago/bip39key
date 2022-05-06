@@ -60,12 +60,12 @@ def parse_gpg_keys(rawstdout):
     return result
 
 
-def run_ssh_keygen(stdin):
+def run_ssh_keygen(stdin, passphrase=""):
     f = tempfile.NamedTemporaryFile(delete=False)
     try:
         f.write(stdin)
         f.close()
-        cmd = ["ssh-keygen", "-v", "-y", "-P", "", "-f", f.name]
+        cmd = ["ssh-keygen", "-v", "-y", "-P", passphrase, "-f", f.name]
         return run_command(cmd)
     finally:
         os.unlink(f.name)
@@ -94,10 +94,15 @@ BIP39 = [
 REALNAME = "Satoshi Nakamoto"
 EMAIL = "satoshin@gmx.com"
 USERID = "{} <{}>".format(REALNAME, EMAIL)
-
+PASS="m4gicp455w0rd"
 
 class Bip39PGPTest(unittest.TestCase):
-    def check_key(self, keys, fp="A10531F7669DDD0FA50B0A00656C58480711970B", subfp="656C58480711970B"):
+    def check_key(
+        self,
+        keys,
+        fp="A10531F7669DDD0FA50B0A00656C58480711970B",
+        subfp="656C58480711970B",
+    ):
         self.assertEqual(keys["pub"][7], "ed25519")
         self.assertEqual(keys["fpr"], [fp])
         self.assertEqual(keys["uid"][1], "1231006505")
@@ -129,21 +134,31 @@ class Bip39PGPTest(unittest.TestCase):
 
     def test_bad_bip39(self):
         with self.assertRaises(Exception):
-            run_bip39key(['foobarbaz'], USERID, ["-f", "ssh"])
+            run_bip39key(["foobarbaz"], USERID, ["-f", "ssh"])
 
     def test_bad_bip39_checksum(self):
         mnemonic = BIP39[:]
-        mnemonic[-1] = 'abandon'
+        mnemonic[-1] = "abandon"
         with self.assertRaises(Exception):
             run_bip39key(mnemonic, USERID, ["-f", "ssh"])
 
     def test_gpg_with_passphrase(self):
         with GPG() as gpg:
-            stdout, stderr = run_bip39key(BIP39, USERID, ["--passphrase", "m4gicp455w0rd"])
+            stdout, stderr = run_bip39key(
+                BIP39, USERID, ["-p", PASS]
+            )
             gpg.run(["--import"], stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
-            self.check_key(keys, fp="973FB9F6845B59C12544D62695C556EA825BA259", subfp="95C556EA825BA259")
+            self.check_key(
+                keys,
+                fp="973FB9F6845B59C12544D62695C556EA825BA259",
+                subfp="95C556EA825BA259",
+            )
+
+    def test_ssh_with_passphrase(self):
+        stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh", "-p", PASS])
+        run_ssh_keygen(stdout, passphrase=PASS)
 
 
 if __name__ == "__main__":
