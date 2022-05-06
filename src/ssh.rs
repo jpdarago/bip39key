@@ -87,8 +87,8 @@ fn put_ssh_key_with_passphrase(
     put_public_key(context, cursor)?;
     let mut private_key = ByteCursor::new(Vec::with_capacity(512));
     put_private_key_payload(context, check, &mut private_key)?;
-    let mut content = private_key.get_mut();
-    pad(16, &mut content);
+    let content = private_key.get_mut();
+    pad(16, content);
     // Run BCrypt to build the key and IV for AES 256 cipher, and encrypt the private key
     // buffer with it.
     let mut buf: [u8; 48] = [0; 48];
@@ -111,8 +111,8 @@ fn put_ssh_key_without_passphrase(context: &Context, cursor: &mut ByteCursor) ->
     put_public_key(context, cursor)?;
     let mut private_key = ByteCursor::new(Vec::with_capacity(512));
     put_private_key_payload(context, /*check=*/ 0, &mut private_key)?;
-    let mut content = private_key.get_mut();
-    pad(8, &mut content);
+    let content = private_key.get_mut();
+    pad(8, content);
     put_bytes(content, cursor)?;
     Ok(())
 }
