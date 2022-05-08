@@ -7,6 +7,7 @@ use crate::types::*;
 use bip39::{Language, Mnemonic};
 use clap::Parser;
 use std::io::BufWriter;
+use std::io::Read;
 
 // Default creation time: timestamp of the Bitcoin genesis block. Any timestamp would
 // work but this one is fairly recent, well established, and stored in a decentralized
@@ -82,7 +83,7 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
     let mut phrase = String::new();
-    std::io::stdin().read_line(&mut phrase)?;
+    std::io::stdin().read_to_string(&mut phrase)?;
     let mnemonic = Mnemonic::from_phrase(phrase.trim(), Language::English);
     if let Err(err) = mnemonic {
         eprintln!("Invalid BIP39 mnemonic: {}", err);
