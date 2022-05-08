@@ -38,7 +38,7 @@ pub struct EncryptKey {
 impl EncryptKey {
     pub fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<EncryptKey> {
         // x25519_dalek requires a fixed size buffer. Instead of wrangling slices let's just copy.
-        let mut encrypt_secret_key_bytes: [u8; 32] = [0; 32];
+        let mut encrypt_secret_key_bytes = [0u8; 32];
         encrypt_secret_key_bytes.copy_from_slice(secret_key_bytes);
         let encrypt_secret_key: x25519_dalek::StaticSecret = encrypt_secret_key_bytes.into();
         let encrypt_public_key = x25519_dalek::PublicKey::from(&encrypt_secret_key);

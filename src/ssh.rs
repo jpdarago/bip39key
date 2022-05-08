@@ -91,7 +91,7 @@ fn put_ssh_key_with_passphrase(
     pad(16, content);
     // Run BCrypt to build the key and IV for AES 256 cipher, and encrypt the private key
     // buffer with it.
-    let mut buf: [u8; 48] = [0; 48];
+    let mut buf = [0u8; 48];
     bcrypt_pbkdf(passphrase, salt, rounds, &mut buf)?;
     let mut stream = Aes256Ctr::new(buf[..32].into(), buf[32..].into());
     stream.apply_keystream(content);

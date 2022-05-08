@@ -92,7 +92,7 @@ fn s2k_key(passphrase: &str, salt: &[u8], count: usize) -> Vec<u8> {
     // The implementation follows what GPG does, not the OpenPGP spec in the RFC.
     // See report by skeeto@ (https://dev.gnupg.org/T4676).
     let mut buf = vec![0u8; passphrase.len() + salt.len()];
-    buf[..salt.len()].copy_from_slice(&salt);
+    buf[..salt.len()].copy_from_slice(salt);
     buf[salt.len()..].copy_from_slice(passphrase.as_bytes());
     let iterations = count / buf.len();
     for _ in 0..iterations {
@@ -104,13 +104,13 @@ fn s2k_key(passphrase: &str, salt: &[u8], count: usize) -> Vec<u8> {
 }
 
 fn s2k_encrypt(key: &[u8], passphrase: &str, out: &mut ByteCursor) -> Result<()> {
-    let mut salt_and_iv: [u8; 24] = [0; 24];
+    let mut salt_and_iv = [0u8; 24];
     rand::rngs::OsRng.fill_bytes(&mut salt_and_iv);
     let max_s2k_count = s2k_byte_count(0xFF);
     let salt = &salt_and_iv[..8];
     let iv = &salt_and_iv[8..];
-    let encrypt_key = s2k_key(&passphrase, salt, max_s2k_count);
-    let mut data = mpi_encode(&key);
+    let encrypt_key = s2k_key(passphrase, salt, max_s2k_count);
+    let mut data = mpi_encode(key);
     // Compute SHA1 and append it as HMAC to the data.
     let mut mac = sha1::Sha1::new();
     mac.update(&data);
@@ -119,10 +119,10 @@ fn s2k_encrypt(key: &[u8], passphrase: &str, out: &mut ByteCursor) -> Result<()>
     Aes256Cfb::new(encrypt_key.as_slice().into(), iv.into()).encrypt(&mut data);
     // S2K Encrypted. AES256, Iterated and Salted S2k, SHA-256
     out.write_all(&[254, 9, 3, 8])?;
-    out.write_all(&salt)?;
+    out.write_all(salt)?;
     // Max S2K byte.
     out.write_all(&[0xFF])?;
-    out.write_all(&iv)?;
+    out.write_all(iv)?;
     out.write_all(&data)?;
     Ok(())
 }
@@ -179,7 +179,7 @@ fn output_unencrypted_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> R
     cursor.write_all(&[0])?;
     // TODO: Why do we need this? I took it from passphrase2pgp but I do not understand why we
     // would need to reverse the secret key.
-    let mut reverse_secret_key: [u8; 32] = [0; 32];
+    let mut reverse_secret_key = [0u8; 32];
     reverse_secret_key.copy_from_slice(&key.secret_key.to_bytes());
     reverse_secret_key.reverse();
     let mpi_key = mpi_encode(&reverse_secret_key);
@@ -198,7 +198,7 @@ fn output_encrypted_secret_subkey(
     cursor.write_all(&payload)?;
     // TODO: Why do we need this? I took it from passphrase2pgp but I do not understand why we
     // would need to reverse the secret key.
-    let mut reverse_secret_key: [u8; 32] = [0; 32];
+    let mut reverse_secret_key = [0u8; 32];
     reverse_secret_key.copy_from_slice(&key.secret_key.to_bytes());
     reverse_secret_key.reverse();
     s2k_encrypt(&reverse_secret_key, passphrase, &mut cursor)?;
