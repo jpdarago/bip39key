@@ -5,7 +5,7 @@
 
 > :warning: **EXPERIMENTAL:** Do not use for anything serious (like your actual production keys!).
 
-Generates a cryptographical key from a BIP39 mnemonic (and, optionally, a
+Generates a cryptographical key from a [BIP39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki) mnemonic (and, optionally, a
 passphrase).
 
 It can generate either
@@ -16,8 +16,15 @@ It can generate either
 
 In all cases the tool requires a User ID in [RFC 2822](https://datatracker.ietf.org/doc/html/rfc2822) format.
 
-When providing a passphrase, the tool will use it to generate the key, and will
-also encrypt the resulting OpenPGP/OpenSSH keys with the provided passphrase.
+When providing a passphrase, the tool will use it to generate the key together
+with the seed from the BIP39 mnemonic, and will also encrypt the resulting OpenPGP/OpenSSH keys with
+the provided passphrase.
+
+The creation timestamp for the OpenPGP keys is set to the Bitcoin genesis block
+timestamp (1231006505 in seconds from Unix epoch). GPG considers this part of
+the key so it is important to keep it consistent. We use that timestamp because
+it's easy to retrieve, and it's not zero (which can trigger bad corner cases in
+GPG).
 
 ## Usage
 
