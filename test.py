@@ -7,9 +7,13 @@ import tempfile
 import unittest
 
 
-def run_command(cmd, stdinput=None):
+def run_command(cmd, stdinput=None, env={}):
     with subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE
+        cmd,
+        stdout=subprocess.PIPE,
+        stdin=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=dict(os.environ, **env),
     ) as proc:
         try:
             if isinstance(stdinput, str):
@@ -46,7 +50,8 @@ class GPG:
             "--homedir",
             self.tmpdir.name,
         ] + flags
-        return run_command(cmd, stdin)
+        env = {"GNUPGHOME": self.tmpdir.name}
+        return run_command(cmd, stdin, env)
 
 
 def parse_gpg_keys(rawstdout):
@@ -75,7 +80,7 @@ def run_ssh_keygen(stdin, passphrase=""):
 
 
 def run_bip39key(bip39, userid, flags=[]):
-    binary = os.path.join('target', 'release', 'bip39key')
+    binary = os.path.join("target", "release", "bip39key")
     cmd = [binary, "-u", userid] + flags
     return run_command(cmd, " ".join(bip39))
 
@@ -183,7 +188,8 @@ class Bip39PGPTest(unittest.TestCase):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh", "-p", PASS])
         run_ssh_keygen(stdout, passphrase=PASS)
         with self.assertRaises(Exception):
-            run_ssh_keygen(stdout, passphrase='badpassword')
+            run_ssh_keygen(stdout, passphrase="badpassword")
+
 
 if __name__ == "__main__":
     unittest.main()
