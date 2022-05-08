@@ -75,7 +75,8 @@ def run_ssh_keygen(stdin, passphrase=""):
 
 
 def run_bip39key(bip39, userid, flags=[]):
-    cmd = ["./target/release/bip39key", "-u", userid] + flags
+    binary = os.path.join('target', 'release', 'bip39key')
+    cmd = [binary, "-u", userid] + flags
     return run_command(cmd, " ".join(bip39))
 
 
