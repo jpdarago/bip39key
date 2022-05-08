@@ -57,8 +57,12 @@ jobs:
           args: -- -D warnings
 
   tests:
+    strategy:
+      matrix:
+        # TODO: Add Windows once I debug what is going on with GPG.
+        os: [ubuntu-latest, macos-latest]
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
