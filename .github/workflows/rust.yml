@@ -10,13 +10,9 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  os_matrix:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
   check:
     name: Check
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -35,7 +31,7 @@ jobs:
 
   lints:
     name: Lints
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -61,6 +57,9 @@ jobs:
           args: -- -D warnings
 
   tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     name: Tests
     runs-on: ${{ matrix.os }}
     steps:
