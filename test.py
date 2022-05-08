@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import oschmod
 
 
 def run_command(cmd, stdinput=None, env={}):
@@ -34,7 +35,7 @@ def run_command(cmd, stdinput=None, env={}):
 class GPG:
     def __enter__(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        os.chmod(self.tmpdir.name, 0x1C0)
+        oschmod.set_mode(self.tmpdir.name, 0x1C0)
         return self
 
     def __exit__(self, type, value, traceback):
@@ -107,13 +108,12 @@ PASS = "m4gicp455w0rd"
 
 
 class Bip39PGPTest(unittest.TestCase):
-    def setUp(self, *args, **kwargs):
+    @classmethod
+    def setUpClass(cls):
         try:
             run_command(["gpg-agent", "--daemon", "--verbose"])
         except Exception:
             pass
-        super(unittest.TestCase, self).__init__(*args, **kwargs)
-
 
     def check_key(
         self,
