@@ -107,6 +107,14 @@ PASS = "m4gicp455w0rd"
 
 
 class Bip39PGPTest(unittest.TestCase):
+    def setUp(self, *args, **kwargs):
+        try:
+            run_command(["gpg-agent", "--daemon", "--verbose"])
+        except Exception:
+            pass
+        super(unittest.TestCase, self).__init__(*args, **kwargs)
+
+
     def check_key(
         self,
         keys,
