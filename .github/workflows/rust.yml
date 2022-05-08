@@ -59,7 +59,8 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # TODO: Add Windows once I debug what is going on with GPG.
+        os: [ubuntu-latest, macos-latest]
     name: Tests
     runs-on: ${{ matrix.os }}
     steps:
