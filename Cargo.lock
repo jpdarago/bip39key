@@ -74,6 +74,7 @@ dependencies = [
  "base64",
  "bcrypt-pbkdf",
  "byteorder",
+ "cfb-mode",
  "clap",
  "ctr",
  "ed25519-dalek",
@@ -142,6 +143,15 @@ name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
+
+[[package]]
+name = "cfb-mode"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b258c89d55316f606923b53511d0d41c20c4a2d440e5e56dd7185267aa98bd0e"
+dependencies = [
+ "cipher",
+]
 
 [[package]]
 name = "cfg-if"

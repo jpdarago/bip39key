@@ -1,9 +1,13 @@
 use crate::types::*;
 
+use aes::cipher::{AsyncStreamCipher, KeyIvInit};
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use ed25519_dalek::Signer;
+use rand::RngCore;
 use sha2::Digest;
 use std::io::Write;
+
+type Aes256Cfb = cfb_mode::Encryptor<aes::Aes256>;
 
 pub enum PacketType {
     PrivateEncryptSubkey,
@@ -12,6 +16,10 @@ pub enum PacketType {
     Signature,
     UserId,
     LiteralData,
+}
+
+fn s2k_byte_count(count: u8) -> usize {
+    (16 + ((count & 15) as usize)) << (((count >> 4) as usize) + 6)
 }
 
 fn hash_u16(n: u16, hasher: &mut sha2::Sha256) {
@@ -79,6 +87,46 @@ fn mpi_encode(data: &[u8]) -> Vec<u8> {
     vec
 }
 
+fn s2k_key(passphrase: &str, salt: &[u8], count: usize) -> Vec<u8> {
+    let mut hash = sha2::Sha256::new();
+    // The implementation follows what GPG does, not the OpenPGP spec in the RFC.
+    // See report by skeeto@ (https://dev.gnupg.org/T4676).
+    let mut buf = vec![0u8; passphrase.len() + salt.len()];
+    buf[..salt.len()].copy_from_slice(&salt);
+    buf[salt.len()..].copy_from_slice(passphrase.as_bytes());
+    let iterations = count / buf.len();
+    for _ in 0..iterations {
+        hash.update(&buf);
+    }
+    let tail = count - iterations * buf.len();
+    hash.update(&buf[..tail]);
+    hash.finalize().to_vec()
+}
+
+fn s2k_encrypt(key: &[u8], passphrase: &str, out: &mut ByteCursor) -> Result<()> {
+    let mut salt_and_iv: [u8; 24] = [0; 24];
+    rand::rngs::OsRng.fill_bytes(&mut salt_and_iv);
+    let max_s2k_count = s2k_byte_count(0xFF);
+    let salt = &salt_and_iv[..8];
+    let iv = &salt_and_iv[8..];
+    let encrypt_key = s2k_key(&passphrase, salt, max_s2k_count);
+    let mut data = mpi_encode(&key);
+    // Compute SHA1 and append it as HMAC to the data.
+    let mut mac = sha1::Sha1::new();
+    mac.update(&data);
+    data.extend(mac.finalize());
+    // Encrypt data using AES.
+    Aes256Cfb::new(encrypt_key.as_slice().into(), iv.into()).encrypt(&mut data);
+    // S2K Encrypted. AES256, Iterated and Salted S2k, SHA-256
+    out.write_all(&[254, 9, 3, 8])?;
+    out.write_all(&salt)?;
+    // Max S2K byte.
+    out.write_all(&[0xFF])?;
+    out.write_all(&iv)?;
+    out.write_all(&data)?;
+    Ok(())
+}
+
 // Returns the PGP checksum for a data buffer, defined in OpenPGP RFC 4880.
 fn checksum(buffer: &[u8]) -> u16 {
     let mut result: u32 = 0;
@@ -123,7 +171,7 @@ fn public_subkey_payload(key: &EncryptKey) -> Result<Vec<u8>> {
     Ok(cursor.into_inner())
 }
 
-fn output_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> Result<()> {
+fn output_unencrypted_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     let payload = public_subkey_payload(key)?;
     cursor.write_all(&payload)?;
@@ -137,6 +185,23 @@ fn output_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> Result<()> {
     let mpi_key = mpi_encode(&reverse_secret_key);
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
+    output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
+}
+
+fn output_encrypted_secret_subkey(
+    key: &EncryptKey,
+    passphrase: &str,
+    out: &mut ByteCursor,
+) -> Result<()> {
+    let mut cursor = ByteCursor::new(Vec::with_capacity(256));
+    let payload = public_subkey_payload(key)?;
+    cursor.write_all(&payload)?;
+    // TODO: Why do we need this? I took it from passphrase2pgp but I do not understand why we
+    // would need to reverse the secret key.
+    let mut reverse_secret_key: [u8; 32] = [0; 32];
+    reverse_secret_key.copy_from_slice(&key.secret_key.to_bytes());
+    reverse_secret_key.reverse();
+    s2k_encrypt(&reverse_secret_key, passphrase, &mut cursor)?;
     output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
@@ -161,7 +226,7 @@ fn output_public_key(key: &SignKey, out: &mut ByteCursor) -> Result<()> {
     output_as_packet(PacketType::PublicSignKey, &payload, out)
 }
 
-fn output_secret_key(key: &SignKey, out: &mut ByteCursor) -> Result<()> {
+fn output_unencrypted_secret_key(key: &SignKey, out: &mut ByteCursor) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     let payload = public_key_payload(key)?;
     cursor.write_all(&payload)?;
@@ -170,7 +235,18 @@ fn output_secret_key(key: &SignKey, out: &mut ByteCursor) -> Result<()> {
     let mpi_key = mpi_encode(key.keypair.secret.as_bytes());
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
-    // The packet header does not count for the total length.
+    output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
+}
+
+fn output_encrypted_secret_key(
+    key: &SignKey,
+    passphrase: &str,
+    out: &mut ByteCursor,
+) -> Result<()> {
+    let mut cursor = ByteCursor::new(Vec::with_capacity(256));
+    let payload = public_key_payload(key)?;
+    cursor.write_all(&payload)?;
+    s2k_encrypt(key.keypair.secret.as_bytes(), passphrase, &mut cursor)?;
     output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
 }
 
@@ -301,11 +377,19 @@ pub fn output_as_packets<W: Write>(
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     let mut buffer = ByteCursor::new(Vec::new());
-    output_secret_key(&context.sign_key, &mut buffer)?;
+    if let Some(passphrase) = &context.passphrase {
+        output_encrypted_secret_key(&context.sign_key, passphrase, &mut buffer)?;
+    } else {
+        output_unencrypted_secret_key(&context.sign_key, &mut buffer)?;
+    }
     output_user_id(&context.user_id, &mut buffer)?;
     output_self_signature(&context.sign_key, &context.user_id, &mut buffer)?;
     if let Some(encrypt_key) = &context.encrypt_key {
-        output_secret_subkey(encrypt_key, &mut buffer)?;
+        if let Some(passphrase) = &context.passphrase {
+            output_encrypted_secret_subkey(encrypt_key, passphrase, &mut buffer)?;
+        } else {
+            output_unencrypted_secret_subkey(encrypt_key, &mut buffer)?;
+        }
         output_subkey_signature(&context.sign_key, encrypt_key, &mut buffer)?;
     }
     output_comment(&context.metadata, &mut buffer)?;
