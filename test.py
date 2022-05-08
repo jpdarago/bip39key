@@ -74,6 +74,7 @@ def run_ssh_keygen(stdin, passphrase=""):
     try:
         f.write(stdin)
         f.close()
+        oschmod.set_mode(f.name, 0o700)
         cmd = ["ssh-keygen", "-v", "-y", "-P", passphrase, "-f", f.name]
         return run_command(cmd)
     finally:
