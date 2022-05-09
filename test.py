@@ -111,10 +111,9 @@ PASS = "m4gicp455w0rd"
 class Bip39PGPTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        try:
-            run_command(["gpg-agent", "--daemon", "--verbose"])
-        except Exception:
-            pass
+        print("Running cargo...", end='', flush=True)
+        run_command(["cargo", "build", "--release"])
+        print("Done. Running tests.")
 
     def check_key(
         self,
