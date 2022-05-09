@@ -79,7 +79,7 @@ fn put_ssh_key_with_passphrase(
     rand::rngs::OsRng.fill_bytes(&mut randbuf);
     let salt = &randbuf[..16];
     let check = LittleEndian::read_u32(&randbuf[16..20]);
-    let rounds = 64;
+    let rounds = 512;
     // kdfoptions - salt and rounds.
     put_kdfoptions(salt, rounds, cursor)?;
     // 1 secret key.
