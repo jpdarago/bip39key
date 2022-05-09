@@ -86,7 +86,9 @@ jobs:
           python-version: 3.9
 
       - name: Install Python deps
-        run: pip install pipenv
+        run: |
+          pip install pipenv
+          pipenv install
 
       - name: Run tests
         run: |
