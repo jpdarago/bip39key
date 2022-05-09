@@ -86,8 +86,8 @@ jobs:
           python-version: 3.9
 
       - name: Install Python deps
-        run: pip install oschmod
+        run: pip install pipenv
 
       - name: Run tests
         run: |
-          python3 test.py
+          pipenv run ./test.py

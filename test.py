@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
 import os
+import oschmod
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
-import oschmod
 
 
 def run_command(cmd, stdinput=None, env={}):
@@ -107,10 +108,16 @@ EMAIL = "satoshin@gmx.com"
 USERID = "{} <{}>".format(REALNAME, EMAIL)
 PASS = "m4gicp455w0rd"
 
+def check_binary(binary, message):
+    if not shutil.which(binary):
+        print("{} is not installed. {}".format(binary, message))
+        sys.exit(1)
 
 class Bip39PGPTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        check_binary('gpg', 'Please install GNU Privacy Guard.')
+        check_binary('ssh-keygen', 'Please install OpenSSH.')
         print("Running cargo...", end='', flush=True)
         run_command(["cargo", "build", "--release"])
         print("Done. Running tests.")

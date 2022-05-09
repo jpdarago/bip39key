@@ -85,6 +85,16 @@ Optionally, you can provide a passphrase. `bip39key`
 will generate a second buffer from that passphrase using Argon2id and then XOR
 that buffer against the 512 bits buffer generated from the seed.
 
+## Running tests.
+
+Ensure that `gpg` and `ssh-keygen` are installed.
+
+You can then use [`pipenv`](https://pipenv.pypa.io/en/latest/) to run the tests.
+
+```sh
+$ pipenv run ./test.py
+```
+
 ## Acknowledgements
 
 A very significant part of the implementation is based on [passphrase2pgp](https://github.com/skeeto/passphrase2pgp).
