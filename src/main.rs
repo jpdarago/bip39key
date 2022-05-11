@@ -85,8 +85,10 @@ fn write_keys<W: std::io::Write>(
 }
 
 fn electrum_seed(phrase: &str) -> pbkdf2::password_hash::Result<Vec<u8>> {
-    let mut params = pbkdf2::Params::default();
-    params.rounds = 2048;
+    let params = pbkdf2::Params {
+        rounds: 2048,
+        output_length: 32,
+    };
     let salt = SaltString::new("electrum")?;
     let entropy = pbkdf2::Pbkdf2.hash_password_customized(
         phrase.as_bytes(),
