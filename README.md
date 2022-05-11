@@ -29,6 +29,8 @@ GPG).
 ## Usage
 
 ```
+bip39key 0.1.0
+
 USAGE:
     bip39key [OPTIONS] --user-id <USER_ID>
 
@@ -50,6 +52,9 @@ OPTIONS:
 
     -p, --passphrase <PASSPHRASE>
             Optional passphrase. See README.md for details
+
+    -s, --seed-format <SEED_FORMAT>
+            Seed Format: BIP39, Electrum [default: bip39] [possible values: bip39, electrum]
 
     -t, --timestamp <TIMESTAMP>
             Timestamp (in seconds) for the dates. If unset, use the default 1231006505
