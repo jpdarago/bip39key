@@ -103,22 +103,39 @@ BIP39 = [
     "about",
 ]
 
+ELECTRUM = [
+    "work",
+    "size",
+    "tomato",
+    "royal",
+    "recipe",
+    "old",
+    "portion",
+    "nut",
+    "mask",
+    "laptop",
+    "diamond",
+    "junior",
+]
+
 REALNAME = "Satoshi Nakamoto"
 EMAIL = "satoshin@gmx.com"
 USERID = "{} <{}>".format(REALNAME, EMAIL)
 PASS = "m4gicp455w0rd"
+
 
 def check_binary(binary, message):
     if not shutil.which(binary):
         print("{} is not installed. {}".format(binary, message))
         sys.exit(1)
 
+
 class Bip39PGPTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        check_binary('gpg', 'Please install GNU Privacy Guard.')
-        check_binary('ssh-keygen', 'Please install OpenSSH.')
-        print("Running cargo...", end='', flush=True)
+        check_binary("gpg", "Please install GNU Privacy Guard.")
+        check_binary("ssh-keygen", "Please install OpenSSH.")
+        print("Running cargo...", end="", flush=True)
         run_command(["cargo", "build", "--release"])
         print("Done. Running tests.")
 
@@ -152,6 +169,18 @@ class Bip39PGPTest(unittest.TestCase):
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(keys)
+
+    def test_electrum(self):
+        with GPG() as gpg:
+            stdout, stderr = run_bip39key(ELECTRUM, USERID, ["-s", "electrum"])
+            gpg.run(["--import"], stdout)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.check_key(
+                keys,
+                fp="384CC65ACAD3BECE74FFF34391BA6BD773B77C9E",
+                subfp="91BA6BD773B77C9E",
+            )
 
     def test_ssh(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh"])

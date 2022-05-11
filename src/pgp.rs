@@ -393,11 +393,8 @@ pub fn output_as_packets<W: Write>(
         output_subkey_signature(&context.sign_key, encrypt_key, &mut buffer)?;
     }
     output_comment(&context.metadata, &mut buffer)?;
-    if let Err(err) = out.write_all(buffer.get_ref()) {
-        Err(Box::new(err))
-    } else {
-        Ok(())
-    }
+    out.write_all(buffer.get_ref())?;
+    Ok(())
 }
 
 fn armor_checksum(bytes: &[u8]) -> u32 {

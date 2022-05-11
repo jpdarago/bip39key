@@ -15,6 +15,9 @@ cfb-mode = "0.8.1"
 clap = { version = "3.1.13", features = ["derive"] }
 ctr = "0.9.1"
 ed25519-dalek = "1.0.1"
+hex = "0.4.3"
+hmac-sha512 = "1.1.1"
+pbkdf2 = "0.11.0"
 rand = { version = "0.8.5", features = ["getrandom"] }
 rust-argon2 = "1.0.0"
 sha1 = "0.10.0"
