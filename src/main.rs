@@ -1,13 +1,11 @@
 mod pgp;
+mod seed;
 mod ssh;
 mod types;
 
 use crate::types::*;
 
-use anyhow::bail;
-use bip39::{Language, Mnemonic};
 use clap::Parser;
-use pbkdf2::password_hash::{PasswordHasher, SaltString};
 use std::io::BufWriter;
 use std::io::Read;
 
@@ -20,12 +18,6 @@ const TIMESTAMP: u32 = 1231006505;
 enum OutputFormat {
     Pgp,
     Ssh,
-}
-
-#[derive(PartialEq, Eq, Clone, clap::ArgEnum, Debug)]
-enum SeedFormat {
-    Bip39,
-    Electrum,
 }
 
 #[derive(Parser, Debug)]
@@ -61,7 +53,7 @@ struct Args {
 
     /// Seed Format: BIP39, Electrum
     #[clap(short, long, arg_enum, default_value = "bip39")]
-    seed_format: SeedFormat,
+    seed_format: seed::SeedFormat,
 }
 
 fn write_keys<W: std::io::Write>(
@@ -84,51 +76,6 @@ fn write_keys<W: std::io::Write>(
     Ok(())
 }
 
-fn electrum_seed(phrase: &str) -> pbkdf2::password_hash::Result<Vec<u8>> {
-    let params = pbkdf2::Params {
-        rounds: 2048,
-        output_length: 32,
-    };
-    let salt = SaltString::new("electrum")?;
-    let entropy = pbkdf2::Pbkdf2.hash_password_customized(
-        phrase.as_bytes(),
-        Some(pbkdf2::Algorithm::Pbkdf2Sha512.ident()),
-        None,
-        params,
-        &salt,
-    )?;
-    let hash = entropy.hash.unwrap();
-    Ok(hash.as_bytes().to_vec())
-}
-
-fn is_valid_electrum_phrase(phrase: &str) -> bool {
-    let encoded = hex::encode(hmac_sha512::HMAC::mac(phrase, b"Seed version"));
-    encoded[..2].eq("01") || encoded[..3].eq("100")
-}
-
-fn decode_seed_phrase(args: &Args, phrase: &str) -> Result<Vec<u8>> {
-    match args.seed_format {
-        SeedFormat::Bip39 => {
-            let mnemonic = Mnemonic::from_phrase(phrase, Language::English)?;
-            let entropy = mnemonic.entropy();
-            if 8 * entropy.len() < 128 {
-                bail!("Insufficient entropy");
-            }
-            Ok(entropy.to_vec())
-        }
-        SeedFormat::Electrum => {
-            if !is_valid_electrum_phrase(phrase) {
-                bail!("Invalid Electrum seed phrase {}", phrase);
-            }
-            let result = electrum_seed(phrase);
-            if let Err(err) = result {
-                bail!("Failed to build seed phrase {:?}", err);
-            }
-            Ok(result.unwrap())
-        }
-    }
-}
-
 fn main() -> Result<()> {
     let args = Args::parse();
     if args.just_signkey && args.format == OutputFormat::Ssh {
@@ -141,7 +88,7 @@ fn main() -> Result<()> {
     }
     let mut phrase = String::new();
     std::io::stdin().read_to_string(&mut phrase)?;
-    let entropy = decode_seed_phrase(&args, phrase.trim())?;
+    let entropy = seed::decode_phrase(&args.seed_format, phrase.trim())?;
     let context = Context::new(
         &args.user_id,
         &entropy,
