@@ -98,7 +98,7 @@ fn main() -> Result<()> {
     )
     .expect("Could not build OpenPGP keys");
     if let Some(filename) = &args.output_filename {
-        let output = std::fs::File::open(&filename);
+        let output = std::fs::File::create(&filename);
         if let Err(err) = output {
             eprintln!("Cannot open output file {}: {}", filename, err);
             std::process::exit(1);

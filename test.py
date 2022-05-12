@@ -162,6 +162,16 @@ class Bip39PGPTest(unittest.TestCase):
             keys = parse_gpg_keys(keysout)
             self.check_key(keys)
 
+    def test_gpg_raw_with_file(self):
+        with GPG() as gpg:
+            f = tempfile.NamedTemporaryFile(delete=False)
+            stdout, stderr = run_bip39key(BIP39, USERID, ["-o", f.name])
+            gpg.run(["--import", f.name], stdout)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.check_key(keys)
+            os.unlink(f.name)
+
     def test_gpg_armor(self):
         with GPG() as gpg:
             stdout, stderr = run_bip39key(BIP39, USERID, ["-a"])
