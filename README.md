@@ -29,7 +29,7 @@ GPG).
 ## Usage
 
 ```
-bip39key 0.1.0
+bip39key 0.2.0
 
 USAGE:
     bip39key [OPTIONS] --user-id <USER_ID>
@@ -46,6 +46,9 @@ OPTIONS:
 
     -j, --just-signkey
             Only output the sign key for PGP
+
+    -k, --public-key
+            Output the public key
 
     -o, --output-filename <OUTPUT_FILENAME>
             Filename where to output the keys, if not present then write to stdout
