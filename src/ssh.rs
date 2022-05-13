@@ -136,3 +136,18 @@ pub fn output_secret_as_pem<W: Write>(
     out.write_all(b"\n-----END OPENSSH PRIVATE KEY-----\n")?;
     Ok(())
 }
+
+pub fn output_public_as_pem<W: Write>(
+    context: &Context,
+    out: &mut std::io::BufWriter<W>,
+) -> Result<()> {
+    let mut cursor = ByteCursor::new(Vec::with_capacity(1024));
+    put_string("ssh-ed25519", &mut cursor)?;
+    put_bytes(context.sign_key.keypair.public.as_bytes(), &mut cursor)?;
+    out.write_all(b"ssh-ed25519 ")?;
+    out.write_all(base64::encode(cursor.get_mut()).as_bytes())?;
+    out.write_all(&[0x20])?;
+    out.write_all(context.user_id.user_id.as_bytes())?;
+    out.write_all(&[0x0a])?;
+    Ok(())
+}

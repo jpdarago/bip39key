@@ -156,16 +156,26 @@ class Bip39PGPTest(unittest.TestCase):
 
     def test_gpg_raw(self):
         with GPG() as gpg:
-            stdout, stderr = run_bip39key(BIP39, USERID)
+            stdout, _ = run_bip39key(BIP39, USERID)
             gpg.run(["--import"], stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(keys)
 
+    def test_gpg_public(self):
+        with GPG() as gpg:
+            stdout, _ = run_bip39key(BIP39, USERID, ["--public-key"])
+            gpg.run(["--import"], stdout)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.assertEqual(keys["pub"][7], "ed25519")
+            self.assertEqual(keys["fpr"], ["A10531F7669DDD0FA50B0A00656C58480711970B"])
+            self.assertEqual(keys["uid"][3], USERID)
+
     def test_gpg_raw_with_file(self):
         with GPG() as gpg:
             f = tempfile.NamedTemporaryFile(delete=False)
-            stdout, stderr = run_bip39key(BIP39, USERID, ["-o", f.name])
+            stdout, _ = run_bip39key(BIP39, USERID, ["-o", f.name])
             gpg.run(["--import", f.name], stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
@@ -174,7 +184,7 @@ class Bip39PGPTest(unittest.TestCase):
 
     def test_gpg_armor(self):
         with GPG() as gpg:
-            stdout, stderr = run_bip39key(BIP39, USERID, ["-a"])
+            stdout, _ = run_bip39key(BIP39, USERID, ["-a"])
             gpg.run(["--import"], stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
@@ -182,7 +192,7 @@ class Bip39PGPTest(unittest.TestCase):
 
     def test_electrum(self):
         with GPG() as gpg:
-            stdout, stderr = run_bip39key(ELECTRUM, USERID, ["-s", "electrum"])
+            stdout, _ = run_bip39key(ELECTRUM, USERID, ["-s", "electrum"])
             gpg.run(["--import"], stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
@@ -193,8 +203,13 @@ class Bip39PGPTest(unittest.TestCase):
             )
 
     def test_ssh(self):
-        stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh"])
-        run_ssh_keygen(stdout)
+        secretkey, _ = run_bip39key(BIP39, USERID, ["-f", "ssh"])
+        keygenpub, _ = run_ssh_keygen(secretkey)
+        bip39pub, _ = run_bip39key(BIP39, USERID, ["-f", "ssh", "--public-key"])
+        # The bip39 pub might contain less information than ssh-keygen,
+        # e.g. it will not contain the comments.
+        lhs, rhs = keygenpub.strip(), bip39pub.strip()
+        self.assertTrue(lhs.startswith(rhs), msg="{} vs {}".format(lhs, rhs))
 
     def test_bad_bip39(self):
         with self.assertRaises(Exception):

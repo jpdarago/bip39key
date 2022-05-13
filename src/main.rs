@@ -47,6 +47,10 @@ struct Args {
     #[clap(short, long)]
     armor: bool,
 
+    /// Output the public key.
+    #[clap(short = 'k', long)]
+    public_key: bool,
+
     /// Optional passphrase. See README.md for details.
     #[clap(short, long)]
     passphrase: Option<String>,
@@ -63,14 +67,24 @@ fn write_keys<W: std::io::Write>(
 ) -> Result<()> {
     match args.format {
         OutputFormat::Pgp => {
-            if args.armor {
+            if args.public_key {
+                if args.armor {
+                    pgp::output_public_armored(context, &mut writer)?;
+                } else {
+                    pgp::output_public_as_packets(context, &mut writer)?;
+                }
+            } else if args.armor {
                 pgp::output_armored(context, &mut writer)?;
             } else {
                 pgp::output_as_packets(context, &mut writer)?;
             }
         }
         OutputFormat::Ssh => {
-            ssh::output_secret_as_pem(context, &mut writer)?;
+            if args.public_key {
+                ssh::output_public_as_pem(context, &mut writer)?;
+            } else {
+                ssh::output_secret_as_pem(context, &mut writer)?;
+            }
         }
     };
     Ok(())

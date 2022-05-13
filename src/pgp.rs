@@ -13,6 +13,7 @@ pub enum PacketType {
     PrivateEncryptSubkey,
     PrivateSignKey,
     PublicSignKey,
+    PublicSubKey,
     Signature,
     UserId,
     LiteralData,
@@ -45,6 +46,7 @@ fn output_as_packet(
             PacketType::PrivateEncryptSubkey => 7,
             PacketType::PrivateSignKey => 5,
             PacketType::PublicSignKey => 6,
+            PacketType::PublicSubKey => 14,
             PacketType::Signature => 2,
             PacketType::UserId => 13,
             PacketType::LiteralData => 11,
@@ -168,7 +170,12 @@ fn public_subkey_payload(key: &EncryptKey) -> Result<Vec<u8>> {
     cursor.write_all(&key.public_key.to_bytes())?;
     // KDF parameters. Length, Reserved, SHA-256, AES-256.
     cursor.write_all(&[3, 1, 8, 9])?;
-    Ok(cursor.into_inner())
+    Ok(cursor.get_mut().to_vec())
+}
+
+fn output_public_subkey(key: &EncryptKey, cursor: &mut ByteCursor) -> Result<()> {
+    let payload = public_subkey_payload(key)?;
+    output_as_packet(PacketType::PublicSubKey, &payload, cursor)
 }
 
 fn output_unencrypted_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> Result<()> {
@@ -433,5 +440,46 @@ pub fn output_armored<W: Write>(context: &Context, out: &mut std::io::BufWriter<
     out.write_all(b"\n")?;
     out.write_all(base64::encode(checksum_cursor.get_ref()).as_bytes())?;
     out.write_all(b"\n-----END PGP PRIVATE KEY BLOCK-----\n")?;
+    Ok(())
+}
+
+pub fn output_public_armored<W: Write>(
+    context: &Context,
+    out: &mut std::io::BufWriter<W>,
+) -> Result<()> {
+    out.write_all(b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n")?;
+    out.write_all(b"Version: GnuPG v2\n\n")?;
+    let mut packets_cursor = ByteCursor::new(vec![]);
+    let mut buffer = std::io::BufWriter::new(&mut packets_cursor);
+    output_public_as_packets(context, &mut buffer)?;
+    buffer.flush()?;
+    let packets = buffer.get_mut().get_mut();
+    out.write_all(textwrap::fill(&base64::encode(&packets), 70).as_bytes())?;
+    let mut checksum_cursor = ByteCursor::new(vec![]);
+    let checksum = armor_checksum(packets);
+    checksum_cursor.write_all(&[
+        ((checksum >> 16) & 0xFF) as u8,
+        ((checksum >> 8) & 0xFF) as u8,
+        (checksum & 0xFF) as u8,
+    ])?;
+    out.write_all(b"\n")?;
+    out.write_all(base64::encode(checksum_cursor.get_ref()).as_bytes())?;
+    out.write_all(b"\n-----END PGP PUBLIC KEY BLOCK-----\n")?;
+    Ok(())
+}
+
+pub fn output_public_as_packets<W: Write>(
+    context: &Context,
+    out: &mut std::io::BufWriter<W>,
+) -> Result<()> {
+    let mut buffer = ByteCursor::new(Vec::new());
+    output_public_key(&context.sign_key, &mut buffer)?;
+    output_user_id(&context.user_id, &mut buffer)?;
+    output_self_signature(&context.sign_key, &context.user_id, &mut buffer)?;
+    if let Some(encrypt_key) = &context.encrypt_key {
+        output_public_subkey(encrypt_key, &mut buffer)?;
+        output_subkey_signature(&context.sign_key, encrypt_key, &mut buffer)?;
+    }
+    out.write_all(buffer.get_ref())?;
     Ok(())
 }
