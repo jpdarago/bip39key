@@ -17,6 +17,7 @@ pub fn get_passphrase() -> Result<String> {
     let input = &[
         "SETREPEAT",
         "SETTITLE bip39key",
+        "SETPROMPT BIP39 Key",
         "SETDESC Please input your passphrase",
         "GETPIN",
         "",
