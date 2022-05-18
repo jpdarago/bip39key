@@ -1,4 +1,5 @@
 mod pgp;
+mod pinentry;
 mod seed;
 mod ssh;
 mod types;
@@ -51,9 +52,9 @@ struct Args {
     #[clap(short = 'k', long)]
     public_key: bool,
 
-    /// Optional passphrase. See README.md for details.
+    /// Ask for passphrase using pinentry.
     #[clap(short, long)]
-    passphrase: Option<String>,
+    passphrase: bool,
 
     /// Seed Format: BIP39, Electrum
     #[clap(short, long, arg_enum, default_value = "bip39")]
@@ -90,6 +91,15 @@ fn write_keys<W: std::io::Write>(
     Ok(())
 }
 
+fn passphrase(args: &Args) -> Result<Option<String>> {
+    if args.passphrase {
+        let passphrase = pinentry::get_passphrase()?;
+        Ok(Some(passphrase))
+    } else {
+        Ok(None)
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     if args.just_signkey && args.format == OutputFormat::Ssh {
@@ -103,14 +113,15 @@ fn main() -> Result<()> {
     let mut phrase = String::new();
     std::io::stdin().read_to_string(&mut phrase)?;
     let entropy = seed::decode_phrase(&args.seed_format, phrase.trim())?;
+    let pass = passphrase(&args)?;
     let context = Context::new(
         &args.user_id,
         &entropy,
-        &args.passphrase,
+        &pass,
         args.timestamp.unwrap_or(TIMESTAMP),
         !args.just_signkey,
     )
-    .expect("Could not build OpenPGP keys");
+    .expect("Could not build keys");
     if let Some(filename) = &args.output_filename {
         let output = std::fs::File::create(&filename);
         if let Err(err) = output {
