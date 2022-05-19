@@ -52,9 +52,15 @@ struct Args {
     #[clap(short = 'k', long)]
     public_key: bool,
 
-    /// Ask for passphrase using pinentry.
+    /// Optional passphrase. If set, -e/--pinentry must not be set.
+    /// See README.md for details.
     #[clap(short, long)]
-    passphrase: bool,
+    passphrase: Option<String>,
+
+    /// Request passphrase with pinentry.
+    /// See README.md for details.
+    #[clap(short = 'e', long)]
+    pinentry: bool,
 
     /// Seed Format: BIP39, Electrum
     #[clap(short, long, arg_enum, default_value = "bip39")]
@@ -92,9 +98,11 @@ fn write_keys<W: std::io::Write>(
 }
 
 fn passphrase(args: &Args) -> Result<Option<String>> {
-    if args.passphrase {
+    if args.pinentry {
         let passphrase = pinentry::get_passphrase()?;
         Ok(Some(passphrase))
+    } else if let Some(pass) = &args.passphrase {
+        Ok(Some(pass.clone()))
     } else {
         Ok(None)
     }
@@ -108,6 +116,10 @@ fn main() -> Result<()> {
     }
     if args.armor && args.format == OutputFormat::Ssh {
         eprintln!("Armor option (--armor/-a) only works with PGP output format.");
+        std::process::exit(1);
+    }
+    if args.passphrase.is_some() && args.pinentry {
+        eprintln!("One of --passphrase/--pinentry must be set at a time.");
         std::process::exit(1);
     }
     let mut phrase = String::new();

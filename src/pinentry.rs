@@ -1,12 +1,17 @@
+use anyhow::Context;
+
 use crate::types::*;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Write};
 use std::process::{Command, Stdio};
 
 pub fn get_passphrase() -> Result<String> {
-    let pinentry = Command::new("pinentry")
+    let pinentry_executable =
+        std::env::var("BIP39_PINENTRY").unwrap_or_else(|_| "pinentry".to_string());
+    let pinentry = Command::new(&pinentry_executable)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .with_context(|| format!("Could not find executable {}, try using -p/--passphrase or use BIP39_PINENTRY env var to set the path.", pinentry_executable))?;
     let stdout = pinentry
         .stdout
         .ok_or_else(|| Error::new(ErrorKind::Other, "Could not capture standard output"))?;
@@ -45,5 +50,5 @@ pub fn get_passphrase() -> Result<String> {
             stdin.write_all(input.as_bytes())?;
         }
     }
-    Ok(result)
+    Ok(result.trim().to_string())
 }
