@@ -58,9 +58,7 @@ fn put_private_key_payload(context: &Context, check: u32, cursor: &mut ByteCurso
     private_payload.write_all(context.sign_key.keypair.secret.as_bytes())?;
     private_payload.write_all(context.sign_key.keypair.public.as_bytes())?;
     put_bytes(private_payload.get_mut(), cursor)?;
-    let mut comment = context.user_id.user_id.clone();
-    comment.push_str(" - ");
-    comment.push_str(&context.metadata.data);
+    let comment = context.user_id.user_id.clone();
     put_string(&comment, cursor)?;
     Ok(())
 }

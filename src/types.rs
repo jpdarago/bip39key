@@ -7,11 +7,6 @@ pub struct UserId {
     pub user_id: String,
 }
 
-pub struct Comment {
-    pub data: String,
-    pub timestamp_secs: u32,
-}
-
 pub struct SignKey {
     pub keypair: ed25519_dalek::Keypair,
     pub created_timestamp_secs: u32,
@@ -56,7 +51,6 @@ pub struct Context {
     pub user_id: UserId,
     pub sign_key: SignKey,
     pub encrypt_key: Option<EncryptKey>,
-    pub metadata: Comment,
     pub passphrase: Option<String>,
 }
 
@@ -101,14 +95,6 @@ impl Context {
             },
             sign_key: SignKey::new(&secret_key_bytes[..32], timestamp_secs)?,
             encrypt_key,
-            metadata: Comment {
-                timestamp_secs,
-                data: format!(
-                    "Created by {} version {}",
-                    env!("CARGO_PKG_NAME"),
-                    env!("CARGO_PKG_VERSION"),
-                ),
-            },
             passphrase: passphrase.clone(),
         })
     }

@@ -16,7 +16,6 @@ pub enum PacketType {
     PublicSubKey,
     Signature,
     UserId,
-    LiteralData,
 }
 
 fn s2k_byte_count(count: u8) -> usize {
@@ -49,7 +48,6 @@ fn output_as_packet(
             PacketType::PublicSubKey => 14,
             PacketType::Signature => 2,
             PacketType::UserId => 13,
-            PacketType::LiteralData => 11,
         };
     out.write_all(&[type_byte])?;
     let length = packet_bytes.len();
@@ -141,20 +139,6 @@ fn checksum(buffer: &[u8]) -> u16 {
 // Outputs the user id as a PGP user id packet.
 fn output_user_id(user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
     output_as_packet(PacketType::UserId, user_id.user_id.as_bytes(), out)
-}
-
-fn output_comment(comment: &Comment, out: &mut ByteCursor) -> Result<()> {
-    let mut cursor = ByteCursor::new(Vec::with_capacity(256));
-    // Text data as UTF-8.
-    cursor.write_all(&[0x75])?;
-    // Made up filename, its not important.
-    let filename = "bip39pgp.info.txt";
-    cursor.write_all(&[filename.len() as u8])?;
-    cursor.write_all(filename.as_bytes())?;
-    // Timestamp for the file, its not important.
-    cursor.write_u32::<BigEndian>(comment.timestamp_secs)?;
-    cursor.write_all(comment.data.as_bytes())?;
-    output_as_packet(PacketType::LiteralData, cursor.get_ref(), out)
 }
 
 fn public_subkey_payload(key: &EncryptKey) -> Result<Vec<u8>> {
@@ -399,7 +383,6 @@ pub fn output_as_packets<W: Write>(
         }
         output_subkey_signature(&context.sign_key, encrypt_key, &mut buffer)?;
     }
-    output_comment(&context.metadata, &mut buffer)?;
     out.write_all(buffer.get_ref())?;
     Ok(())
 }
@@ -420,16 +403,13 @@ fn armor_checksum(bytes: &[u8]) -> u32 {
 
 pub fn output_armored<W: Write>(context: &Context, out: &mut std::io::BufWriter<W>) -> Result<()> {
     out.write_all(b"-----BEGIN PGP PRIVATE KEY BLOCK-----\n")?;
-    out.write_all(b"Version: GnuPG v2\n")?;
-    out.write_all(b"Comment: ")?;
-    out.write_all(context.metadata.data.as_bytes())?;
-    out.write_all(b"\n\n")?;
+    out.write_all(b"Version: GnuPG v2\n\n")?;
     let mut packets_cursor = ByteCursor::new(vec![]);
     let mut buffer = std::io::BufWriter::new(&mut packets_cursor);
     output_as_packets(context, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
-    out.write_all(textwrap::fill(&base64::encode(&packets), 70).as_bytes())?;
+    out.write_all(textwrap::fill(&base64::encode(&packets), 64).as_bytes())?;
     let mut checksum_cursor = ByteCursor::new(vec![]);
     let checksum = armor_checksum(packets);
     checksum_cursor.write_all(&[
@@ -437,7 +417,7 @@ pub fn output_armored<W: Write>(context: &Context, out: &mut std::io::BufWriter<
         ((checksum >> 8) & 0xFF) as u8,
         (checksum & 0xFF) as u8,
     ])?;
-    out.write_all(b"\n")?;
+    out.write_all(b"\n=")?;
     out.write_all(base64::encode(checksum_cursor.get_ref()).as_bytes())?;
     out.write_all(b"\n-----END PGP PRIVATE KEY BLOCK-----\n")?;
     Ok(())
@@ -454,7 +434,7 @@ pub fn output_public_armored<W: Write>(
     output_public_as_packets(context, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
-    out.write_all(textwrap::fill(&base64::encode(&packets), 70).as_bytes())?;
+    out.write_all(textwrap::fill(&base64::encode(&packets), 64).as_bytes())?;
     let mut checksum_cursor = ByteCursor::new(vec![]);
     let checksum = armor_checksum(packets);
     checksum_cursor.write_all(&[
@@ -462,7 +442,7 @@ pub fn output_public_armored<W: Write>(
         ((checksum >> 8) & 0xFF) as u8,
         (checksum & 0xFF) as u8,
     ])?;
-    out.write_all(b"\n")?;
+    out.write_all(b"\n=")?;
     out.write_all(base64::encode(checksum_cursor.get_ref()).as_bytes())?;
     out.write_all(b"\n-----END PGP PUBLIC KEY BLOCK-----\n")?;
     Ok(())
