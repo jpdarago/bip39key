@@ -50,5 +50,5 @@ pub fn get_passphrase() -> Result<String> {
             stdin.write_all(input.as_bytes())?;
         }
     }
-    Ok(result.trim().to_string())
+    Ok(result)
 }
