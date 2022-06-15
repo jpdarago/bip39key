@@ -31,7 +31,7 @@ fn electrum_seed(phrase: &str) -> pbkdf2::password_hash::Result<Vec<u8>> {
 }
 
 fn is_valid_electrum_phrase(phrase: &str) -> bool {
-    let mut hmac = HmacSha512::new_from_slice(b"Seed version").expect("Could not initilize HMAC");
+    let mut hmac = HmacSha512::new_from_slice(b"Seed version").expect("Could not initialize HMAC");
     hmac.update(phrase.as_bytes());
     let encoded = hex::encode(hmac.finalize().into_bytes());
     encoded[..2].eq("01") || encoded[..3].eq("100")
