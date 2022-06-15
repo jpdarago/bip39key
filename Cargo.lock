@@ -85,7 +85,7 @@ dependencies = [
  "ctr",
  "ed25519-dalek",
  "hex",
- "hmac-sha512",
+ "hmac 0.12.1",
  "pbkdf2 0.11.0",
  "rand 0.8.5",
  "rust-argon2",
@@ -406,12 +406,6 @@ checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
 dependencies = [
  "digest 0.10.3",
 ]
-
-[[package]]
-name = "hmac-sha512"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b2ce076d8070f292037093a825343f6341fe0ce873268c2477e2f49abd57b10"
 
 [[package]]
 name = "indexmap"

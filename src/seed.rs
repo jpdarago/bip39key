@@ -2,7 +2,10 @@ use crate::types::*;
 
 use anyhow::bail;
 use bip39::{Language, Mnemonic};
+use hmac::Mac;
 use pbkdf2::password_hash::{PasswordHasher, SaltString};
+
+type HmacSha512 = hmac::Hmac<sha2::Sha512>;
 
 #[derive(PartialEq, Eq, Clone, clap::ArgEnum, Debug)]
 pub enum SeedFormat {
@@ -28,7 +31,9 @@ fn electrum_seed(phrase: &str) -> pbkdf2::password_hash::Result<Vec<u8>> {
 }
 
 fn is_valid_electrum_phrase(phrase: &str) -> bool {
-    let encoded = hex::encode(hmac_sha512::HMAC::mac(phrase, b"Seed version"));
+    let mut hmac = HmacSha512::new_from_slice(b"Seed version").expect("Could not initilize HMAC");
+    hmac.update(phrase.as_bytes());
+    let encoded = hex::encode(hmac.finalize().into_bytes());
     encoded[..2].eq("01") || encoded[..3].eq("100")
 }
 
