@@ -27,7 +27,7 @@ GPG).
 ## Usage
 
 ```
-bip39key 0.2.0
+bip39key 1.0.0
 
 USAGE:
     bip39key [OPTIONS] --user-id <USER_ID>
@@ -35,6 +35,9 @@ USAGE:
 OPTIONS:
     -a, --armor
             Output as armored
+
+    -e, --pinentry
+            Request passphrase with pinentry. See README.md for details
 
     -f, --format <FORMAT>
             Output format: SSH or PGP [default: pgp] [possible values: pgp, ssh]
@@ -52,7 +55,7 @@ OPTIONS:
             Filename where to output the keys, if not present then write to stdout
 
     -p, --passphrase <PASSPHRASE>
-            Optional passphrase. See README.md for details
+            Optional passphrase. If set, -e/--pinentry must not be set. See README.md for details
 
     -s, --seed-format <SEED_FORMAT>
             Seed Format: BIP39, Electrum [default: bip39] [possible values: bip39, electrum]
