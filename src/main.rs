@@ -125,7 +125,7 @@ fn read_phrase(args: &Args) -> Result<String> {
             continue;
         }
         stripped.push_str(word);
-        stripped.push_str(" ");
+        stripped.push(' ');
     }
     Ok(stripped)
 }
@@ -156,7 +156,7 @@ fn main() -> Result<()> {
     )
     .expect("Could not build keys");
     if let Some(filename) = &args.output_filename {
-        let output = std::fs::File::create(&filename);
+        let output = std::fs::File::create(filename);
         if let Err(err) = output {
             eprintln!("Cannot open output file {}: {}", filename, err);
             std::process::exit(1);

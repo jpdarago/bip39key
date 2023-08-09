@@ -25,13 +25,13 @@ fn s2k_byte_count(count: u8) -> usize {
 fn hash_u16(n: u16, hasher: &mut sha2::Sha256) {
     let mut buf = [0; 2];
     BigEndian::write_u16(&mut buf, n);
-    hasher.update(&buf);
+    hasher.update(buf);
 }
 
 fn hash_u32(n: u32, hasher: &mut sha2::Sha256) {
     let mut buf = [0; 4];
     BigEndian::write_u32(&mut buf, n);
-    hasher.update(&buf);
+    hasher.update(buf);
 }
 
 // Encode the contents of the byte buffer as a PGP packet of the given type.
@@ -247,8 +247,8 @@ fn key_fingerprint(key: &SignKey) -> Result<Vec<u8>> {
     output_public_key(key, &mut cursor)?;
     let packet = cursor.get_ref();
     let without_header = &packet[2..];
-    hasher.update(&[0x99, 0, without_header.len() as u8]);
-    hasher.update(&without_header);
+    hasher.update([0x99, 0, without_header.len() as u8]);
+    hasher.update(without_header);
     Ok(hasher.finalize().to_vec())
 }
 
@@ -284,16 +284,16 @@ fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) 
     // now that we have the packet up to the point we need to hash.
     let mut hasher = sha2::Sha256::new();
     let public_key_packet = public_key_payload(key)?;
-    hasher.update(&[0x99]);
+    hasher.update([0x99]);
     hash_u16(public_key_packet.len().try_into()?, &mut hasher);
     hasher.update(&public_key_packet);
     let user_id = &user_id.user_id;
-    hasher.update(&[0xb4]);
+    hasher.update([0xb4]);
     hash_u32(user_id.len().try_into()?, &mut hasher);
-    hasher.update(&user_id.as_bytes());
+    hasher.update(user_id.as_bytes());
     let packet = packet_cursor.get_ref();
-    hasher.update(&packet);
-    hasher.update(&[0x04, 0xFF]);
+    hasher.update(packet);
+    hasher.update([0x04, 0xFF]);
     hash_u32(packet.len().try_into()?, &mut hasher);
     let hash = hasher.finalize();
     // Sign the hash.
@@ -339,17 +339,17 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
     let mut hasher = sha2::Sha256::new();
     // Sign public key packet.
     let sign_public_key = public_key_payload(key)?;
-    hasher.update(&[0x99]);
+    hasher.update([0x99]);
     hash_u16(sign_public_key.len().try_into()?, &mut hasher);
     hasher.update(&sign_public_key);
     // Subkey public key packet.
     let subkey_public_key = public_subkey_payload(subkey)?;
-    hasher.update(&[0x99]);
+    hasher.update([0x99]);
     hash_u16(subkey_public_key.len().try_into()?, &mut hasher);
     hasher.update(&subkey_public_key);
     let packet = packet_cursor.get_ref();
-    hasher.update(&packet);
-    hasher.update(&[0x04, 0xFF]);
+    hasher.update(packet);
+    hasher.update([0x04, 0xFF]);
     hash_u32(packet.len().try_into()?, &mut hasher);
     let hash = hasher.finalize();
     // Sign the hash.
