@@ -28,6 +28,10 @@ struct Args {
     #[clap(short, long)]
     user_id: String,
 
+    /// Filename from which to read the mnemonic words.
+    #[clap(short, long)]
+    input_filename: Option<String>,
+
     /// Filename where to output the keys, if not present then write to stdout.
     #[clap(short, long)]
     output_filename: Option<String>,
@@ -108,6 +112,24 @@ fn passphrase(args: &Args) -> Result<Option<String>> {
     }
 }
 
+fn read_phrase(args: &Args) -> Result<String> {
+    let mut phrase = String::new();
+    if let Some(input_filename) = &args.input_filename {
+        phrase = std::fs::read_to_string(input_filename)?;
+    } else {
+        std::io::stdin().read_to_string(&mut phrase)?;
+    }
+    let mut stripped = String::new();
+    for word in phrase.split_whitespace() {
+        if word.is_empty() {
+            continue;
+        }
+        stripped.push_str(word);
+        stripped.push_str(" ");
+    }
+    Ok(stripped)
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     if args.just_signkey && args.format == OutputFormat::Ssh {
@@ -122,8 +144,7 @@ fn main() -> Result<()> {
         eprintln!("One of --passphrase/--pinentry must be set at a time.");
         std::process::exit(1);
     }
-    let mut phrase = String::new();
-    std::io::stdin().read_to_string(&mut phrase)?;
+    let phrase = read_phrase(&args)?;
     let entropy = seed::decode_phrase(&args.seed_format, phrase.trim())?;
     let pass = passphrase(&args)?;
     let context = Context::new(
