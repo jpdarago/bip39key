@@ -196,6 +196,7 @@ class Bip39PGPTest(unittest.TestCase):
         with GPG() as gpg:
             f = tempfile.NamedTemporaryFile(delete=False)
             stdout, _ = run_bip39key(BIP39, USERID, ["-o", f.name])
+            f.close()
             self.run_gpg_import(gpg, filename=f.name, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
