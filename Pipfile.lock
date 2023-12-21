@@ -1,29 +1,20 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "cafd1b5db652d95fbb992245ef5d963006c259d0db724c91b9bccf79f544763c"
+            "sha256": "fb91c622b03e57a784e0804d3037ddafed5b3d8ce83c6cfc2248607b88208c8d"
         },
         "pipfile-spec": 6,
         "requires": {
-            "python_version": "3.8"
+            "python_version": "3.10"
         },
         "sources": [
             {
                 "name": "pypi",
-                "url": "https://pypi.org/simple",
+                "url": "https://jpdarago.com/bip39key",
                 "verify_ssl": true
             }
         ]
     },
-    "default": {
-        "oschmod": {
-            "hashes": [
-                "sha256:bec99216f31615ee653b2a5c87cacfb4e4b6184c0e9f71da186300dacae974f3",
-                "sha256:e71efd5ebcf5cfbb620548644f39eed4fc3cd4a907638a8caaff452fb256637c"
-            ],
-            "index": "pypi",
-            "version": "==0.3.12"
-        }
-    },
+    "default": {},
     "develop": {}
 }

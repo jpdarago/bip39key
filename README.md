@@ -101,7 +101,7 @@ Ensure that `gpg` and `ssh-keygen` are installed.
 You can then use [`pipenv`](https://pipenv.pypa.io/en/latest/) to run the tests.
 
 ```sh
-$ pipenv run ./test.py
+$ pipenv run ./test/test.py
 ```
 
 ## Acknowledgements

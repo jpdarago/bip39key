@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 
 import os
-import oschmod
+import platform
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 
+def change_permissions(filename, permissions):
+    if platform.system() != "Windows":
+        os.chmod(filename, permissions)
 
 def run_command(cmd, stdinput=None, env={}):
     with subprocess.Popen(
@@ -36,7 +39,7 @@ def run_command(cmd, stdinput=None, env={}):
 class GPG:
     def __enter__(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        oschmod.set_mode(self.tmpdir.name, 0x1C0)
+        change_permissions(self.tmpdir.name, 0x1C0)
         return self
 
     def __exit__(self, type, value, traceback):
@@ -75,7 +78,7 @@ def run_ssh_keygen(stdin, passphrase=""):
     try:
         f.write(stdin)
         f.close()
-        oschmod.set_mode(f.name, 0o700)
+        change_permissions(f.name, 0o700)
         cmd = ["ssh-keygen", "-v", "-y", "-P", passphrase, "-f", f.name]
         return run_command(cmd)
     finally:
@@ -154,10 +157,27 @@ class Bip39PGPTest(unittest.TestCase):
         self.assertEqual(keys["sub"][5], "e")
         self.assertEqual(keys["sub"][6], "cv25519")
 
+    def run_gpg_import(self, gpg, key, filename=None, password=None):
+        flags = ["--import"]
+        if not filename is None:
+            flags.append(filename)
+        if not password is None:
+            passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
+            with open(passfile, "w") as f:
+                f.write(password)
+            flags.append("--passphrase-file")
+            flags.append(passfile)
+            flags.append("--pinentry-mode")
+            flags.append("loopback")
+            gpg.run(flags, key)
+            os.remove(passfile)
+        else:
+            gpg.run(flags, key)
+
     def test_gpg_raw(self):
         with GPG() as gpg:
             stdout, _ = run_bip39key(BIP39, USERID)
-            gpg.run(["--import"], stdout)
+            self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(keys)
@@ -165,7 +185,7 @@ class Bip39PGPTest(unittest.TestCase):
     def test_gpg_public(self):
         with GPG() as gpg:
             stdout, _ = run_bip39key(BIP39, USERID, ["--public-key"])
-            gpg.run(["--import"], stdout)
+            self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.assertEqual(keys["pub"][7], "ed25519")
@@ -176,7 +196,7 @@ class Bip39PGPTest(unittest.TestCase):
         with GPG() as gpg:
             f = tempfile.NamedTemporaryFile(delete=False)
             stdout, _ = run_bip39key(BIP39, USERID, ["-o", f.name])
-            gpg.run(["--import", f.name], stdout)
+            self.run_gpg_import(gpg, filename=f.name, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(keys)
@@ -185,7 +205,7 @@ class Bip39PGPTest(unittest.TestCase):
     def test_gpg_armor(self):
         with GPG() as gpg:
             stdout, _ = run_bip39key(BIP39, USERID, ["-a"])
-            gpg.run(["--import"], stdout)
+            self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(keys)
@@ -193,7 +213,7 @@ class Bip39PGPTest(unittest.TestCase):
     def test_electrum(self):
         with GPG() as gpg:
             stdout, _ = run_bip39key(ELECTRUM, USERID, ["-s", "electrum"])
-            gpg.run(["--import"], stdout)
+            self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(
@@ -221,27 +241,11 @@ class Bip39PGPTest(unittest.TestCase):
         with self.assertRaises(Exception):
             run_bip39key(mnemonic, USERID, ["-f", "ssh"])
 
-    def run_gpg_with_password(self, gpg, key, password):
-        passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
-        with open(passfile, "w") as f:
-            f.write(password)
-        gpg.run(
-            [
-                "--import",
-                "--passphrase-file",
-                passfile,
-                "--pinentry-mode",
-                "loopback",
-            ],
-            key,
-        )
-        os.remove(passfile)
-
-    def test_gpg_with_passphrase(self):
+    def test_gpg_import_with_passphrase(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-p", PASS])
         with GPG() as gpg:
             passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
-            self.run_gpg_with_password(gpg, stdout, PASS)
+            self.run_gpg_import(gpg, key=stdout, password=PASS)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(
@@ -251,7 +255,7 @@ class Bip39PGPTest(unittest.TestCase):
             )
         with GPG() as gpg:
             with self.assertRaises(Exception):
-                self.run_gpg_with_password(gpg, stdout, "badpassword")
+                self.run_gpg_import(gpg, key=stdout, password="badpassword")
 
     def test_ssh_with_passphrase(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh", "-p", PASS])

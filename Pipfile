@@ -1,12 +1,11 @@
 [[source]]
-url = "https://pypi.org/simple"
+url = "https://github.com/jpdarago/bip39key"
 verify_ssl = true
 name = "pypi"
 
 [packages]
-oschmod = "*"
 
 [dev-packages]
 
 [requires]
-python_version = "3.9"
+python_version = "3.10"
