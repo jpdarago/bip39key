@@ -133,7 +133,7 @@ def check_binary(binary, message):
         sys.exit(1)
 
 
-class Bip39PGPTest(unittest.TestCase):
+class Bip39KeyTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         check_binary("gpg", "Please install GNU Privacy Guard.")
