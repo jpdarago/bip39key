@@ -91,7 +91,9 @@ jobs:
 
       - name: Run tests on Windows
         if: matrix.os == 'windows-latest'
-        run: pipenv run python .\test\test.py
+        run: |
+          gpg-agent --daemon  --verbose
+          pipenv run python .\test\test.py
 
       - name: Run tests on Linux and Macos
         if: matrix.os != 'windows-latest'
