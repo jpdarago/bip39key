@@ -265,5 +265,20 @@ class Bip39KeyTest(unittest.TestCase):
             run_ssh_keygen(stdout, passphrase="badpassword")
 
 
+    def test_golden_with_passphrase(self):
+        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
+        password = "magic-password"
+        userid="Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(bip39, userid, ["-p", password])
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            message, _ = gpg.run([
+                "--passphrase", password,
+                "--pinentry-mode", "loopback",
+                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-with-passphrase.gpg")
+            ])
+            self.assertEqual(message, b"Secret message\n")
+
+
 if __name__ == "__main__":
     unittest.main()
