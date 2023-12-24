@@ -26,8 +26,10 @@ GPG).
 
 ## Usage
 
+> :warning: New users of `bip39key` should use `-h` option.
+
 ```
-bip39key 1.0.0
+bip39key 1.1.0
 
 USAGE:
     bip39key [OPTIONS] --user-id <USER_ID>
@@ -42,8 +44,14 @@ OPTIONS:
     -f, --format <FORMAT>
             Output format: SSH or PGP [default: pgp] [possible values: pgp, ssh]
 
-    -h, --help
+    -h, --use-concatenation
+            Use a hash of the concatenation of key and password instead of XOR of the hashes
+
+        --help
             Print help information
+
+    -i, --input-filename <INPUT_FILENAME>
+            Filename from which to read the mnemonic words
 
     -j, --just-signkey
             Only output the sign key for PGP
@@ -56,6 +64,9 @@ OPTIONS:
 
     -p, --passphrase <PASSPHRASE>
             Optional passphrase. If set, -e/--pinentry must not be set. See README.md for details
+
+    -q, --interactive
+            Request seed phrase through an interactive CLI prompt
 
     -s, --seed-format <SEED_FORMAT>
             Seed Format: BIP39, Electrum [default: bip39] [possible values: bip39, electrum]
@@ -90,9 +101,19 @@ can make the resulting key weak.
 The BIP39 seed is expanded from 128/256 bits to 512 bits using Argon2id, with
 the User ID as the salt.
 
-Optionally, you can provide a passphrase. `bip39key`
-will generate a second buffer from that passphrase using Argon2id and then XOR
-that buffer against the 512 bits buffer generated from the seed.
+Optionally, you can provide a passphrase. `bip39key` will then:
+
+1. If using the `--use-concatenate/-h` option, it will concatenate the seed
+with the passphrase, and then apply Argon2id to the result to produce the
+key.
+2. Apply Argon2id to the seed, then to the passphrase, and then XOR both buffers.
+
+> :warning:: You should prefer to use the `-h` option: with the XOR algorithm,
+> if the attacker gets your passphrase and output key, they can get the hashed seed
+> through an XOR and then attempt to brute force the input phrase. It is very hard
+> to do due to 128 bits of the input and the CPU intensive properties of Argon2id,
+> but concatenating both is better since the input phrase is no longer in any well
+> known format that could have been precomputed.
 
 ## Running tests.
 
