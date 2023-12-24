@@ -61,7 +61,7 @@ impl Context {
         passphrase: &Option<String>,
         timestamp_secs: u32,
         generate_encrypt_key: bool,
-        use_concatenation: bool
+        use_concatenation: bool,
     ) -> Result<Context> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let config = argon2::Config {
@@ -83,7 +83,8 @@ impl Context {
             } else {
                 let bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
                 // Generate another buffer with Argon for the passphrase and XOR it.
-                let passphrase_bytes = argon2::hash_raw(pass.as_bytes(), user_id.as_bytes(), &config)?;
+                let passphrase_bytes =
+                    argon2::hash_raw(pass.as_bytes(), user_id.as_bytes(), &config)?;
                 bytes
                     .iter()
                     .zip(passphrase_bytes.iter())

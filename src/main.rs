@@ -72,7 +72,7 @@ struct Args {
 
     /// Use a hash of the concatenation of key and password instead of XOR of the hashes.
     #[clap(short = 'h', long)]
-    use_concatenation: bool
+    use_concatenation: bool,
 }
 
 fn write_keys<W: std::io::Write>(
@@ -151,15 +151,15 @@ fn main() -> Result<()> {
     let phrase = read_phrase(&args)?;
     let entropy = seed::decode_phrase(&args.seed_format, phrase.trim())?;
     let pass = passphrase(&args)?;
-    let context =
-        Context::new(
-            &args.user_id,
-            &entropy,
-            &pass,
-            args.timestamp.unwrap_or(TIMESTAMP),
-            !args.just_signkey,
-            args.use_concatenation
-        ).expect("Could not build keys");
+    let context = Context::new(
+        &args.user_id,
+        &entropy,
+        &pass,
+        args.timestamp.unwrap_or(TIMESTAMP),
+        !args.just_signkey,
+        args.use_concatenation,
+    )
+    .expect("Could not build keys");
     if let Some(filename) = &args.output_filename {
         let output = std::fs::File::create(filename);
         if let Err(err) = output {
