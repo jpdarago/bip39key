@@ -7,6 +7,7 @@ mod types;
 use crate::types::*;
 
 use clap::Parser;
+use inquire::Text;
 use std::io::BufWriter;
 use std::io::Read;
 
@@ -73,6 +74,10 @@ struct Args {
     /// Use a hash of the concatenation of key and password instead of XOR of the hashes.
     #[clap(short = 'h', long)]
     use_concatenation: bool,
+
+    /// Request seed phrase through an interactive CLI prompt.
+    #[clap(short = 'q', long)]
+    interactive: bool,
 }
 
 fn write_keys<W: std::io::Write>(
@@ -106,8 +111,12 @@ fn write_keys<W: std::io::Write>(
 }
 
 fn passphrase(args: &Args) -> Result<Option<String>> {
+    if args.interactive {
+        let passphrase = pinentry::get_passphrase_from_stdio()?;
+        return Ok(Some(passphrase));
+    }
     if args.pinentry {
-        let passphrase = pinentry::get_passphrase()?;
+        let passphrase = pinentry::get_passphrase_from_pinentry()?;
         Ok(Some(passphrase))
     } else if let Some(pass) = &args.passphrase {
         Ok(Some(pass.clone()))
@@ -116,7 +125,10 @@ fn passphrase(args: &Args) -> Result<Option<String>> {
     }
 }
 
-fn read_phrase(args: &Args) -> Result<String> {
+fn entropy(args: &Args) -> Result<Vec<u8>> {
+    if args.interactive {
+        return seed::phrase_from_stdio(&args.seed_format);
+    }
     let mut phrase = String::new();
     if let Some(input_filename) = &args.input_filename {
         phrase = std::fs::read_to_string(input_filename)?;
@@ -131,7 +143,7 @@ fn read_phrase(args: &Args) -> Result<String> {
         stripped.push_str(word);
         stripped.push(' ');
     }
-    Ok(stripped)
+    seed::decode_phrase(&args.seed_format, stripped.trim())
 }
 
 fn main() -> Result<()> {
@@ -148,8 +160,7 @@ fn main() -> Result<()> {
         eprintln!("One of --passphrase/--pinentry must be set at a time.");
         std::process::exit(1);
     }
-    let phrase = read_phrase(&args)?;
-    let entropy = seed::decode_phrase(&args.seed_format, phrase.trim())?;
+    let entropy = entropy(&args)?;
     let pass = passphrase(&args)?;
     let context = Context::new(
         &args.user_id,
@@ -160,7 +171,15 @@ fn main() -> Result<()> {
         args.use_concatenation,
     )
     .expect("Could not build keys");
-    if let Some(filename) = &args.output_filename {
+    if args.interactive {
+        let filename = Text::new("Provide an output filename for the key: ").prompt()?;
+        let output = std::fs::File::create(&filename);
+        if let Err(err) = output {
+            eprintln!("Cannot open output file {}: {}", filename, err);
+            std::process::exit(1);
+        }
+        write_keys(&args, &context, BufWriter::new(&mut output.unwrap()))
+    } else if let Some(filename) = &args.output_filename {
         let output = std::fs::File::create(filename);
         if let Err(err) = output {
             eprintln!("Cannot open output file {}: {}", filename, err);

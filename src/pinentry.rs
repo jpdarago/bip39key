@@ -1,10 +1,11 @@
 use anyhow::Context;
 
 use crate::types::*;
+use inquire::{Confirm, Password};
 use std::io::{BufRead, BufReader, Error, ErrorKind, Write};
 use std::process::{Command, Stdio};
 
-pub fn get_passphrase() -> Result<String> {
+pub fn get_passphrase_from_pinentry() -> Result<String> {
     let pinentry_executable =
         std::env::var("BIP39_PINENTRY").unwrap_or_else(|_| "pinentry".to_string());
     let pinentry = Command::new(&pinentry_executable)
@@ -51,4 +52,16 @@ pub fn get_passphrase() -> Result<String> {
         }
     }
     Ok(result)
+}
+
+pub fn get_passphrase_from_stdio() -> Result<String> {
+    loop {
+        let password = Password::new("Enter your password:").prompt()?;
+        if !password.is_empty() {
+            return Ok(password);
+        }
+        if Confirm::new("The password is empty, are you sure about this?").prompt()? {
+            return Ok(password);
+        }
+    }
 }

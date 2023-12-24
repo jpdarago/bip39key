@@ -3,7 +3,10 @@ use crate::types::*;
 use anyhow::bail;
 use bip39::{Language, Mnemonic};
 use hmac::Mac;
+use inquire::Text;
 use pbkdf2::password_hash::{PasswordHasher, SaltString};
+use std::fmt;
+use std::io::{self, Write};
 
 type HmacSha512 = hmac::Hmac<sha2::Sha512>;
 
@@ -11,6 +14,15 @@ type HmacSha512 = hmac::Hmac<sha2::Sha512>;
 pub enum SeedFormat {
     Bip39,
     Electrum,
+}
+
+impl fmt::Display for SeedFormat {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SeedFormat::Bip39 => write!(f, "BIP39"),
+            SeedFormat::Electrum => write!(f, "Electrum"),
+        }
+    }
 }
 
 fn electrum_seed(phrase: &str) -> pbkdf2::password_hash::Result<Vec<u8>> {
@@ -56,6 +68,22 @@ pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> 
                 bail!("Failed to build seed phrase {:?}", err);
             }
             Ok(result.unwrap())
+        }
+    }
+}
+
+pub fn phrase_from_stdio(seed_format: &SeedFormat) -> Result<Vec<u8>> {
+    loop {
+        let input = Text::new(&format!("Please input a {} phrase: ", seed_format)).prompt()?;
+        let words: String = input.split_whitespace().collect::<Vec<&str>>().join(" ");
+        match decode_phrase(seed_format, &words) {
+            Ok(phrase) => {
+                return Ok(phrase);
+            }
+            Err(s) => {
+                Text::new(&format!("Failed to parse {} phrase: {}", seed_format, s));
+                io::stdout().flush().unwrap();
+            }
         }
     }
 }

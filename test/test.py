@@ -352,6 +352,20 @@ class Bip39KeyTest(unittest.TestCase):
             ])
             self.assertEqual(message, b"Secret message!!\n")
 
+    def test_from_prompt(self):
+        bip39 = "switch limit barely shoot ritual reveal bomb obey luxury around language build".split(" ")
+        password = "magic-password"
+        userid="Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(bip39, userid, ["-p", password])
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            message, _ = gpg.run([
+                "--passphrase", password,
+                "--pinentry-mode", "loopback",
+                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-prompt.gpg")
+            ])
+            self.assertEqual(message, b"Secret message!!\n")
+
 
 if __name__ == "__main__":
     unittest.main()
