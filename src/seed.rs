@@ -72,7 +72,7 @@ pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> 
     }
 }
 
-pub fn phrase_from_stdio(seed_format: &SeedFormat) -> Result<Vec<u8>> {
+pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
     loop {
         let input = Text::new(&format!("Please input a {} phrase: ", seed_format)).prompt()?;
         let words: String = input.split_whitespace().collect::<Vec<&str>>().join(" ");

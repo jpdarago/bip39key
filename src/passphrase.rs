@@ -5,7 +5,7 @@ use inquire::{Confirm, Password};
 use std::io::{BufRead, BufReader, Error, ErrorKind, Write};
 use std::process::{Command, Stdio};
 
-pub fn get_passphrase_from_pinentry() -> Result<String> {
+pub fn from_pinentry() -> Result<String> {
     let pinentry_executable =
         std::env::var("BIP39_PINENTRY").unwrap_or_else(|_| "pinentry".to_string());
     let pinentry = Command::new(&pinentry_executable)
@@ -54,7 +54,7 @@ pub fn get_passphrase_from_pinentry() -> Result<String> {
     Ok(result)
 }
 
-pub fn get_passphrase_from_stdio() -> Result<String> {
+pub fn from_interactive_prompt() -> Result<String> {
     loop {
         let password = Password::new("Enter your password:").prompt()?;
         if !password.is_empty() {

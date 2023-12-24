@@ -1,5 +1,5 @@
 mod pgp;
-mod pinentry;
+mod passphrase;
 mod seed;
 mod ssh;
 mod types;
@@ -110,14 +110,12 @@ fn write_keys<W: std::io::Write>(
     Ok(())
 }
 
-fn passphrase(args: &Args) -> Result<Option<String>> {
+fn get_passphrase(args: &Args) -> Result<Option<String>> {
     if args.interactive {
-        let passphrase = pinentry::get_passphrase_from_stdio()?;
+        let passphrase = passphrase::from_interactive_prompt()?;
         return Ok(Some(passphrase));
-    }
-    if args.pinentry {
-        let passphrase = pinentry::get_passphrase_from_pinentry()?;
-        Ok(Some(passphrase))
+    } else if args.pinentry {
+        Ok(Some(passphrase::from_pinentry()?))
     } else if let Some(pass) = &args.passphrase {
         Ok(Some(pass.clone()))
     } else {
@@ -125,9 +123,9 @@ fn passphrase(args: &Args) -> Result<Option<String>> {
     }
 }
 
-fn entropy(args: &Args) -> Result<Vec<u8>> {
+fn get_seed(args: &Args) -> Result<Vec<u8>> {
     if args.interactive {
-        return seed::phrase_from_stdio(&args.seed_format);
+        return seed::from_prompt(&args.seed_format);
     }
     let mut phrase = String::new();
     if let Some(input_filename) = &args.input_filename {
@@ -146,6 +144,26 @@ fn entropy(args: &Args) -> Result<Vec<u8>> {
     seed::decode_phrase(&args.seed_format, stripped.trim())
 }
 
+fn output_keys(args: &Args, context: &Context) -> Result<()> {
+    let filename = if args.interactive {
+        Some(Text::new("Provide an output filename for the key: ").prompt()?)
+    } else if let Some(f) = &args.output_filename {
+        Some(f.to_string())
+    } else {
+        None
+    };
+    if let Some(f) = filename {
+        let output = std::fs::File::create(&f);
+        if let Err(err) = output {
+            eprintln!("Cannot open output file {}: {}", f, err);
+            std::process::exit(1);
+        }
+        write_keys(&args, &context, BufWriter::new(&mut output.unwrap()))
+    } else {
+        write_keys(&args, &context, BufWriter::new(std::io::stdout()))
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     if args.just_signkey && args.format == OutputFormat::Ssh {
@@ -160,33 +178,16 @@ fn main() -> Result<()> {
         eprintln!("One of --passphrase/--pinentry must be set at a time.");
         std::process::exit(1);
     }
-    let entropy = entropy(&args)?;
-    let pass = passphrase(&args)?;
+    let seed = get_seed(&args)?;
+    let pass = get_passphrase(&args)?;
     let context = Context::new(
         &args.user_id,
-        &entropy,
+        &seed,
         &pass,
         args.timestamp.unwrap_or(TIMESTAMP),
         !args.just_signkey,
         args.use_concatenation,
     )
     .expect("Could not build keys");
-    if args.interactive {
-        let filename = Text::new("Provide an output filename for the key: ").prompt()?;
-        let output = std::fs::File::create(&filename);
-        if let Err(err) = output {
-            eprintln!("Cannot open output file {}: {}", filename, err);
-            std::process::exit(1);
-        }
-        write_keys(&args, &context, BufWriter::new(&mut output.unwrap()))
-    } else if let Some(filename) = &args.output_filename {
-        let output = std::fs::File::create(filename);
-        if let Err(err) = output {
-            eprintln!("Cannot open output file {}: {}", filename, err);
-            std::process::exit(1);
-        }
-        write_keys(&args, &context, BufWriter::new(&mut output.unwrap()))
-    } else {
-        write_keys(&args, &context, BufWriter::new(std::io::stdout()))
-    }
+    output_keys(&args, &context)
 }
