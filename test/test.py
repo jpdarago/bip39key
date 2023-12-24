@@ -52,6 +52,7 @@ class GPG:
             "--display-charset",
             "utf-8",
             "-utf8-strings",
+            "--batch",
             "--homedir",
             self.tmpdir.name,
         ] + flags
@@ -223,6 +224,19 @@ class Bip39KeyTest(unittest.TestCase):
                 subfp="91BA6BD773B77C9E",
             )
 
+    def test_gpg_import_with_passphrase(self):
+     with GPG() as gpg:
+        stdout, _ = run_bip39key(BIP39, USERID, ["-p", PASS])
+        passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
+        self.run_gpg_import(gpg, key=stdout, password=PASS)
+        keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+        keys = parse_gpg_keys(keysout)
+        self.check_key(
+            keys,
+            fp="973FB9F6845B59C12544D62695C556EA825BA259",
+            subfp="95C556EA825BA259",
+        )
+
     def test_ssh(self):
         secretkey, _ = run_bip39key(BIP39, USERID, ["-f", "ssh"])
         keygenpub, _ = run_ssh_keygen(secretkey)
@@ -242,28 +256,28 @@ class Bip39KeyTest(unittest.TestCase):
         with self.assertRaises(Exception):
             run_bip39key(mnemonic, USERID, ["-f", "ssh"])
 
-    def test_gpg_import_with_passphrase(self):
+    def test_gpg_import_with_passphrase_fails(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-p", PASS])
         with GPG() as gpg:
-            passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
-            self.run_gpg_import(gpg, key=stdout, password=PASS)
-            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
-            keys = parse_gpg_keys(keysout)
-            self.check_key(
-                keys,
-                fp="973FB9F6845B59C12544D62695C556EA825BA259",
-                subfp="95C556EA825BA259",
-            )
-        with GPG() as gpg:
+            keyfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
+            with open(keyfile, "wb") as f:
+                f.write(stdout)
             with self.assertRaises(Exception):
-                self.run_gpg_import(gpg, key=stdout, password="badpassword")
+                flags.append("--no-batch")
+                flags.append("--pinentry-mode")
+                flags.append("loopback")
+                flags.append("--passphrase")
+                flags.append("badpassword")
+                flags = ["--import"]
+                flags.append(keyfile)
+                gpg.run(flags, key)
+            os.remove(keyfile)
 
     def test_ssh_with_passphrase(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh", "-p", PASS])
         run_ssh_keygen(stdout, passphrase=PASS)
         with self.assertRaises(Exception):
             run_ssh_keygen(stdout, passphrase="badpassword")
-
 
     def test_golden_with_passphrase(self):
         bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
@@ -278,6 +292,59 @@ class Bip39KeyTest(unittest.TestCase):
                 "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-with-passphrase.gpg")
             ])
             self.assertEqual(message, b"Secret message\n")
+
+    def test_golden_without_passphrase(self):
+        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
+        userid="Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(bip39, userid)
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=None)
+            message, _ = gpg.run([
+                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-without-passphrase.gpg")
+            ])
+            self.assertEqual(message, b"Secret message!!\n")
+
+    def test_golden_concatenated(self):
+        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
+        password = "magic-password"
+        userid="Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(bip39, userid, ["-h", "-p", password])
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            message, _ = gpg.run([
+                "--passphrase", password,
+                "--pinentry-mode", "loopback",
+                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-concatenated.gpg")
+            ])
+            self.assertEqual(message, b"Secret message!!\n")
+
+    def test_golden_electrum(self):
+        electrum = "cause shine enable penalty moral toy undo tree bike satisfy narrow upon".split(" ")
+        password = "magic-password"
+        userid="Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(electrum, userid, ["-p", password, "-s", "electrum"])
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            message, _ = gpg.run([
+                "--passphrase", password,
+                "--pinentry-mode", "loopback",
+                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-electrum.gpg")
+            ])
+            self.assertEqual(message, b"Secret message!!\n")
+
+    def test_golden_electrum_concatenated(self):
+        electrum = "cause shine enable penalty moral toy undo tree bike satisfy narrow upon".split(" ")
+        password = "magic-password"
+        userid="Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(electrum, userid, ["-h", "-p", password, "-s", "electrum"])
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            message, _ = gpg.run([
+                "--passphrase", password,
+                "--pinentry-mode", "loopback",
+                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-electrum-concatenated.gpg")
+            ])
+            self.assertEqual(message, b"Secret message!!\n")
 
 
 if __name__ == "__main__":

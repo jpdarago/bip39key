@@ -61,6 +61,7 @@ impl Context {
         passphrase: &Option<String>,
         timestamp_secs: u32,
         generate_encrypt_key: bool,
+        use_concatenation: bool
     ) -> Result<Context> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let config = argon2::Config {
@@ -74,16 +75,24 @@ impl Context {
             ad: &[],
             hash_length: 64,
         };
-        let mut secret_key_bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
-        if let Some(pass) = &passphrase {
-            // Generate another buffer with Argon for the passphrase and XOR it.
-            let passphrase_bytes = argon2::hash_raw(pass.as_bytes(), user_id.as_bytes(), &config)?;
-            secret_key_bytes = secret_key_bytes
-                .iter()
-                .zip(passphrase_bytes.iter())
-                .map(|(lhs, rhs)| lhs ^ rhs)
-                .collect();
-        }
+        let secret_key_bytes = if let Some(pass) = &passphrase {
+            if use_concatenation {
+                let mut bytes = seed.to_vec();
+                bytes.extend_from_slice(pass.as_bytes());
+                argon2::hash_raw(&bytes, user_id.as_bytes(), &config)?
+            } else {
+                let bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
+                // Generate another buffer with Argon for the passphrase and XOR it.
+                let passphrase_bytes = argon2::hash_raw(pass.as_bytes(), user_id.as_bytes(), &config)?;
+                bytes
+                    .iter()
+                    .zip(passphrase_bytes.iter())
+                    .map(|(lhs, rhs)| lhs ^ rhs)
+                    .collect()
+            }
+        } else {
+            argon2::hash_raw(seed, user_id.as_bytes(), &config)?
+        };
         let encrypt_key = if generate_encrypt_key {
             Some(EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?)
         } else {
