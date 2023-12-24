@@ -113,7 +113,7 @@ fn write_keys<W: std::io::Write>(
 fn get_passphrase(args: &Args) -> Result<Option<String>> {
     if args.interactive {
         let passphrase = passphrase::from_interactive_prompt()?;
-        return Ok(Some(passphrase));
+        Ok(Some(passphrase))
     } else if args.pinentry {
         Ok(Some(passphrase::from_pinentry()?))
     } else if let Some(pass) = &args.passphrase {
@@ -147,10 +147,8 @@ fn get_seed(args: &Args) -> Result<Vec<u8>> {
 fn output_keys(args: &Args, context: &Context) -> Result<()> {
     let filename = if args.interactive {
         Some(Text::new("Provide an output filename for the key: ").prompt()?)
-    } else if let Some(f) = &args.output_filename {
-        Some(f.to_string())
     } else {
-        None
+        args.output_filename.as_ref().map(|f| f.to_string())
     };
     if let Some(f) = filename {
         let output = std::fs::File::create(&f);
@@ -158,9 +156,9 @@ fn output_keys(args: &Args, context: &Context) -> Result<()> {
             eprintln!("Cannot open output file {}: {}", f, err);
             std::process::exit(1);
         }
-        write_keys(&args, &context, BufWriter::new(&mut output.unwrap()))
+        write_keys(args, context, BufWriter::new(&mut output.unwrap()))
     } else {
-        write_keys(&args, &context, BufWriter::new(std::io::stdout()))
+        write_keys(args, context, BufWriter::new(std::io::stdout()))
     }
 }
 
