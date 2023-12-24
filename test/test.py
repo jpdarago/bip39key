@@ -53,6 +53,7 @@ class GPG:
             "utf-8",
             "-utf8-strings",
             "--batch",
+            "--yes",
             "--homedir",
             self.tmpdir.name,
         ] + flags
@@ -139,6 +140,11 @@ class Bip39KeyTest(unittest.TestCase):
     def setUpClass(cls):
         check_binary("gpg", "Please install GNU Privacy Guard.")
         check_binary("ssh-keygen", "Please install OpenSSH.")
+        subprocess.run(['gpgconf', '--kill', 'gpg-agent'], check=True)
+        try:
+            subprocess.run(['gpg-agent', '--daemon', "--verbose"], check=True)
+        except subprocess.CalledProcessError as e:
+            pass
         print("Running cargo...", end="", flush=True)
         run_command(["cargo", "build", "--release"])
         print("Done. Running tests.")

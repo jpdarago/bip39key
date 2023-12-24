@@ -92,8 +92,6 @@ jobs:
       - name: Run tests on Windows
         if: matrix.os == 'windows-latest'
         run: |
-          gpg-agent --daemon  --verbose
-          gpg-connect-agent RELOADAGENT /bye
           pipenv run python .\test\test.py
 
       - name: Run tests on Linux and Macos
