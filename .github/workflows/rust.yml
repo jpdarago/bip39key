@@ -59,7 +59,8 @@ jobs:
   tests:
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        # TODO: Add windows once GPG issue is fixed.
+        os: [ubuntu-latest, macos-latest]
     name: Tests
     runs-on: ${{ matrix.os }}
     steps:
