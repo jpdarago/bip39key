@@ -18,6 +18,7 @@ ed25519-dalek = "2.1.0"
 hex = "0.4.3"
 hmac = "0.12.1"
 inquire = "0.6.2"
+lazy_static = "1.4.0"
 pbkdf2 = { version = "0.12.2", features = ["simple"] }
 rand = { version = "0.8.5", features = ["getrandom"] }
 rust-argon2 = "2.0.0"
