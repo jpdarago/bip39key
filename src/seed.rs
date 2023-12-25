@@ -130,7 +130,7 @@ impl Autocomplete for Completer {
 }
 
 pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
-    Text::new(&format!("Please input a {} phrase: ", seed_format));
+    println!("Please input a {} phrase: ", seed_format);
     loop {
         let mut result = vec![];
         for i in 0..12 {
@@ -145,7 +145,7 @@ pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
                 return Ok(phrase);
             }
             Err(s) => {
-                Text::new(&format!("Failed to parse {} phrase: {}", seed_format, s));
+                println!("Failed to parse {} phrase: {}", seed_format, s);
                 result.clear();
                 io::stdout().flush().unwrap();
             }
