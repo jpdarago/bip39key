@@ -8,6 +8,7 @@ mod types;
 use crate::keys::*;
 use crate::types::*;
 
+use anyhow::bail;
 use clap::Parser;
 use inquire::Text;
 use std::io::BufWriter;
@@ -164,20 +165,31 @@ fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
     }
 }
 
-fn main() -> Result<()> {
-    let args = Args::parse();
+fn validate(args: &Args) -> Result<()> {
     if args.just_signkey && args.format == OutputFormat::Ssh {
-        eprintln!("Subkey option (--subkey/-s) only works with PGP output format.");
-        std::process::exit(1);
+        bail!("Subkey option (--subkey/-s) only works with PGP output format.");
     }
     if args.armor && args.format == OutputFormat::Ssh {
-        eprintln!("Armor option (--armor/-a) only works with PGP output format.");
-        std::process::exit(1);
+        bail!("Armor option (--armor/-a) only works with PGP output format.");
     }
     if args.passphrase.is_some() && args.pinentry {
-        eprintln!("One of --passphrase/--pinentry must be set at a time.");
-        std::process::exit(1);
+        bail!("One of --passphrase/--pinentry must be set at a time.");
     }
+    if args.interactive && args.pinentry {
+        bail!("One of --interactive/--pinentry must be set at a time.");
+    }
+    if args.interactive && args.passphrase.is_some() {
+        bail!("One of --interactive/--passphrase must be set at a time.");
+    }
+    if args.interactive && args.input_filename.is_some() {
+        bail!("One of --interactive/--input_file must be set at a time.");
+    }
+    Ok(())
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    validate(&args)?;
     let seed = get_seed(&args)?;
     let pass = get_passphrase(&args)?;
     let keys = if args.use_concatenation {
