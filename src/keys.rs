@@ -68,21 +68,27 @@ fn run_argon(bytes: &[u8], user_id: &str) -> Result<Vec<u8>> {
         ad: &[],
         hash_length: 64,
     };
-    Ok(argon2::hash_raw(&bytes, user_id.as_bytes(), &config)?)
+    Ok(argon2::hash_raw(bytes, user_id.as_bytes(), &config)?)
 }
 
 impl Keys {
-    fn build_keys(secret_key_bytes: &[u8], user_id: &str, timestamp_secs: u32, generate_encrypt_key: bool, pass: &Option<String>) -> Result<Keys> {
+    fn build_keys(
+        secret_key_bytes: &[u8],
+        user_id: &str,
+        timestamp_secs: u32,
+        generate_encrypt_key: bool,
+        pass: &Option<String>,
+    ) -> Result<Keys> {
         Ok(Keys {
             user_id: UserId {
                 user_id: user_id.to_string(),
             },
             sign_key: SignKey::new(&secret_key_bytes[..32], timestamp_secs)?,
             encrypt_key: if generate_encrypt_key {
-            Some(EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?)
-        } else {
-            None
-        },
+                Some(EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?)
+            } else {
+                None
+            },
             passphrase: pass.clone(),
         })
     }
@@ -92,16 +98,23 @@ impl Keys {
         seed: &[u8],
         passphrase: &Option<String>,
         timestamp_secs: u32,
-        generate_encrypt_key: bool) -> Result<Keys> {
+        generate_encrypt_key: bool,
+    ) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let secret_key_bytes = if let Some(pass) = &passphrase {
             let mut bytes = seed.to_vec();
             bytes.extend_from_slice(pass.as_bytes());
-            run_argon(&bytes, &user_id)?
+            run_argon(&bytes, user_id)?
         } else {
-            run_argon(&seed, &user_id)?
+            run_argon(seed, user_id)?
         };
-        Self::build_keys(&secret_key_bytes, &user_id, timestamp_secs, generate_encrypt_key, &passphrase)
+        Self::build_keys(
+            &secret_key_bytes,
+            user_id,
+            timestamp_secs,
+            generate_encrypt_key,
+            passphrase,
+        )
     }
 
     pub fn new_with_xor(
@@ -113,17 +126,23 @@ impl Keys {
     ) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let secret_key_bytes = if let Some(pass) = &passphrase {
-            let bytes = run_argon(&seed, &user_id)?;
+            let bytes = run_argon(seed, user_id)?;
             // Generate another buffer with Argon for the passphrase and XOR it.
-            let passphrase_bytes = run_argon(pass.as_bytes(), &user_id)?;
+            let passphrase_bytes = run_argon(pass.as_bytes(), user_id)?;
             bytes
                 .iter()
                 .zip(passphrase_bytes.iter())
                 .map(|(lhs, rhs)| lhs ^ rhs)
                 .collect()
         } else {
-            run_argon(&seed, &user_id)?
+            run_argon(seed, user_id)?
         };
-        Self::build_keys(&secret_key_bytes, &user_id, timestamp_secs, generate_encrypt_key, &passphrase)
+        Self::build_keys(
+            &secret_key_bytes,
+            user_id,
+            timestamp_secs,
+            generate_encrypt_key,
+            passphrase,
+        )
     }
 }

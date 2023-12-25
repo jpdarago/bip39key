@@ -1,8 +1,8 @@
+mod keys;
 mod passphrase;
 mod pgp;
 mod seed;
 mod ssh;
-mod keys;
 mod types;
 
 use crate::keys::*;
@@ -83,11 +83,7 @@ struct Args {
     interactive: bool,
 }
 
-fn write_keys<W: std::io::Write>(
-    args: &Args,
-    keys: &Keys,
-    mut writer: BufWriter<W>,
-) -> Result<()> {
+fn write_keys<W: std::io::Write>(args: &Args, keys: &Keys, mut writer: BufWriter<W>) -> Result<()> {
     match args.format {
         OutputFormat::Pgp => {
             if args.public_key {
@@ -194,20 +190,21 @@ fn main() -> Result<()> {
     let pass = get_passphrase(&args)?;
     let keys = if args.use_concatenation {
         Keys::new_with_concat(
-                &args.user_id,
-                &seed,
-                &pass,
-                args.timestamp.unwrap_or(TIMESTAMP),
-                !args.just_signkey,
-            )
+            &args.user_id,
+            &seed,
+            &pass,
+            args.timestamp.unwrap_or(TIMESTAMP),
+            !args.just_signkey,
+        )
     } else {
         Keys::new_with_xor(
-                &args.user_id,
-                &seed,
-                &pass,
-                args.timestamp.unwrap_or(TIMESTAMP),
-                !args.just_signkey,
-            )
-    }.expect("Could not build keys");
+            &args.user_id,
+            &seed,
+            &pass,
+            args.timestamp.unwrap_or(TIMESTAMP),
+            !args.just_signkey,
+        )
+    }
+    .expect("Could not build keys");
     output_keys(&args, &keys)
 }

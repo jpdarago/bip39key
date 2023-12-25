@@ -362,10 +362,7 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
     output_as_packet(PacketType::Signature, packet_cursor.get_ref(), out)
 }
 
-pub fn output_as_packets<W: Write>(
-    keys: &Keys,
-    out: &mut std::io::BufWriter<W>,
-) -> Result<()> {
+pub fn output_as_packets<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) -> Result<()> {
     let mut buffer = ByteCursor::new(Vec::new());
     if let Some(passphrase) = &keys.passphrase {
         output_encrypted_secret_key(&keys.sign_key, passphrase, &mut buffer)?;
@@ -422,10 +419,7 @@ pub fn output_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) ->
     Ok(())
 }
 
-pub fn output_public_armored<W: Write>(
-    keys: &Keys,
-    out: &mut std::io::BufWriter<W>,
-) -> Result<()> {
+pub fn output_public_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) -> Result<()> {
     out.write_all(b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n")?;
     out.write_all(b"Version: GnuPG v2\n\n")?;
     let mut packets_cursor = ByteCursor::new(vec![]);

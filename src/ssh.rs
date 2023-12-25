@@ -116,10 +116,7 @@ fn put_ssh_key_without_passphrase(keys: &Keys, cursor: &mut ByteCursor) -> Resul
     Ok(())
 }
 
-pub fn output_secret_as_pem<W: Write>(
-    keys: &Keys,
-    out: &mut std::io::BufWriter<W>,
-) -> Result<()> {
+pub fn output_secret_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) -> Result<()> {
     // See https://cvsweb.openbsd.org/src/usr.bin/ssh/PROTOCOL.key?annotate=HEAD
     // for a detail of the contents of an OpenSSH private key.
     out.write_all(b"-----BEGIN OPENSSH PRIVATE KEY-----\n")?;
@@ -136,10 +133,7 @@ pub fn output_secret_as_pem<W: Write>(
     Ok(())
 }
 
-pub fn output_public_as_pem<W: Write>(
-    keys: &Keys,
-    out: &mut std::io::BufWriter<W>,
-) -> Result<()> {
+pub fn output_public_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(1024));
     put_string("ssh-ed25519", &mut cursor)?;
     put_bytes(&keys.sign_key.public_key, &mut cursor)?;
