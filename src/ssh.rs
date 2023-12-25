@@ -26,7 +26,7 @@ fn put_string(s: &str, out: &mut ByteCursor) -> Result<()> {
 fn put_public_key(context: &Context, cursor: &mut ByteCursor) -> Result<()> {
     let mut public_key = ByteCursor::new(Vec::with_capacity(512));
     put_string("ssh-ed25519", &mut public_key)?;
-    put_bytes(context.sign_key.keypair.public.as_bytes(), &mut public_key)?;
+    put_bytes(&context.sign_key.public_key, &mut public_key)?;
     put_bytes(public_key.get_ref(), cursor)?;
     Ok(())
 }
@@ -53,10 +53,10 @@ fn put_private_key_payload(context: &Context, check: u32, cursor: &mut ByteCurso
     put_u32(check, cursor)?;
     put_u32(check, cursor)?;
     put_string("ssh-ed25519", cursor)?;
-    put_bytes(context.sign_key.keypair.public.as_bytes(), cursor)?;
+    put_bytes(&context.sign_key.public_key, cursor)?;
     let mut private_payload = ByteCursor::new(Vec::with_capacity(64));
-    private_payload.write_all(context.sign_key.keypair.secret.as_bytes())?;
-    private_payload.write_all(context.sign_key.keypair.public.as_bytes())?;
+    private_payload.write_all(&context.sign_key.private_key)?;
+    private_payload.write_all(&context.sign_key.public_key)?;
     put_bytes(private_payload.get_mut(), cursor)?;
     let comment = context.user_id.user_id.clone();
     put_string(&comment, cursor)?;
@@ -141,7 +141,7 @@ pub fn output_public_as_pem<W: Write>(
 ) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(1024));
     put_string("ssh-ed25519", &mut cursor)?;
-    put_bytes(context.sign_key.keypair.public.as_bytes(), &mut cursor)?;
+    put_bytes(&context.sign_key.public_key, &mut cursor)?;
     out.write_all(b"ssh-ed25519 ")?;
     out.write_all(base64::encode(cursor.get_mut()).as_bytes())?;
     out.write_all(&[0x20])?;

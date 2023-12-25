@@ -314,7 +314,7 @@ class Bip39KeyTest(unittest.TestCase):
         bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
         password = "magic-password"
         userid="Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(bip39, userid, ["-h", "-p", password])
+        stdout, stderr = run_bip39key(bip39, userid, ["-c", "-p", password])
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
             message, _ = gpg.run([
@@ -342,7 +342,7 @@ class Bip39KeyTest(unittest.TestCase):
         electrum = "cause shine enable penalty moral toy undo tree bike satisfy narrow upon".split(" ")
         password = "magic-password"
         userid="Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(electrum, userid, ["-h", "-p", password, "-s", "electrum"])
+        stdout, stderr = run_bip39key(electrum, userid, ["-c", "-p", password, "-s", "electrum"])
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
             message, _ = gpg.run([

@@ -10,7 +10,7 @@ use std::io::{self, Write};
 
 type HmacSha512 = hmac::Hmac<sha2::Sha512>;
 
-#[derive(PartialEq, Eq, Clone, clap::ArgEnum, Debug)]
+#[derive(PartialEq, Eq, Clone, clap::ValueEnum, Debug)]
 pub enum SeedFormat {
     Bip39,
     Electrum,
@@ -30,7 +30,7 @@ fn electrum_seed(phrase: &str) -> pbkdf2::password_hash::Result<Vec<u8>> {
         rounds: 2048,
         output_length: 32,
     };
-    let salt = SaltString::new("electrum")?;
+    let salt = SaltString::from_b64("electrum")?;
     let entropy = pbkdf2::Pbkdf2.hash_password_customized(
         phrase.as_bytes(),
         Some(pbkdf2::Algorithm::Pbkdf2Sha512.ident()),

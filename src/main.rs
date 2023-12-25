@@ -1,5 +1,5 @@
-mod pgp;
 mod passphrase;
+mod pgp;
 mod seed;
 mod ssh;
 mod types;
@@ -16,7 +16,7 @@ use std::io::Read;
 // database.
 const TIMESTAMP: u32 = 1231006505;
 
-#[derive(PartialEq, Eq, Clone, clap::ArgEnum, Debug)]
+#[derive(PartialEq, Eq, Clone, clap::ValueEnum, Debug)]
 enum OutputFormat {
     Pgp,
     Ssh,
@@ -46,7 +46,7 @@ struct Args {
     just_signkey: bool,
 
     /// Output format: SSH or PGP.
-    #[clap(short, long, arg_enum, default_value = "pgp")]
+    #[clap(short, long, default_value = "pgp")]
     format: OutputFormat,
 
     /// Output as armored.
@@ -68,11 +68,11 @@ struct Args {
     pinentry: bool,
 
     /// Seed Format: BIP39, Electrum
-    #[clap(short, long, arg_enum, default_value = "bip39")]
+    #[clap(short, long, default_value = "bip39")]
     seed_format: seed::SeedFormat,
 
     /// Use a hash of the concatenation of key and password instead of XOR of the hashes.
-    #[clap(short = 'h', long)]
+    #[clap(short = 'c', long)]
     use_concatenation: bool,
 
     /// Request seed phrase through an interactive CLI prompt.

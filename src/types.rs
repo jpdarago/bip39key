@@ -8,41 +8,47 @@ pub struct UserId {
 }
 
 pub struct SignKey {
-    pub keypair: ed25519_dalek::Keypair,
+    pub public_key: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH],
+    pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
+    pub signing_key: ed25519_dalek::SigningKey,
     pub created_timestamp_secs: u32,
 }
 
 impl SignKey {
     pub fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<SignKey> {
-        let sign_secret_key = ed25519_dalek::SecretKey::from_bytes(secret_key_bytes)?;
-        let sign_public_key: ed25519_dalek::PublicKey = (&sign_secret_key).into();
+        let mut input = [0u8; 32];
+        input.copy_from_slice(secret_key_bytes);
+        let secret_key = ed25519_dalek::SigningKey::from_bytes(&input);
         Ok(SignKey {
             created_timestamp_secs: timestamp_secs,
-            keypair: ed25519_dalek::Keypair {
-                public: sign_public_key,
-                secret: sign_secret_key,
-            },
+            public_key: secret_key.verifying_key().to_bytes(),
+            private_key: secret_key.to_bytes(),
+            signing_key: secret_key,
         })
     }
 }
 
 pub struct EncryptKey {
-    pub secret_key: x25519_dalek::StaticSecret,
-    pub public_key: x25519_dalek::PublicKey,
+    pub public_key: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH],
+    pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
     pub created_timestamp_secs: u32,
 }
 
 impl EncryptKey {
     pub fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<EncryptKey> {
-        // x25519_dalek requires a fixed size buffer. Instead of wrangling slices let's just copy.
-        let mut encrypt_secret_key_bytes = [0u8; 32];
-        encrypt_secret_key_bytes.copy_from_slice(secret_key_bytes);
-        let encrypt_secret_key: x25519_dalek::StaticSecret = encrypt_secret_key_bytes.into();
+        // Clamp the secret key bytes per Curve25519 specification.
+        // See https://datatracker.ietf.org/doc/html/rfc7748#section-5 for more information.
+        let mut normalized_key = [0u8; 32];
+        normalized_key.copy_from_slice(secret_key_bytes);
+        normalized_key[0] &= 248;
+        normalized_key[31] &= 127;
+        normalized_key[31] |= 64;
+        let encrypt_secret_key: x25519_dalek::StaticSecret = normalized_key.into();
         let encrypt_public_key = x25519_dalek::PublicKey::from(&encrypt_secret_key);
         Ok(EncryptKey {
             created_timestamp_secs: timestamp_secs,
-            public_key: encrypt_public_key,
-            secret_key: encrypt_secret_key,
+            public_key: encrypt_public_key.to_bytes(),
+            private_key: encrypt_secret_key.to_bytes(),
         })
     }
 }
@@ -70,7 +76,6 @@ impl Context {
             mem_cost: 64 * 1024,
             time_cost: 32,
             lanes: 8,
-            thread_mode: argon2::ThreadMode::Parallel,
             secret: &[],
             ad: &[],
             hash_length: 64,

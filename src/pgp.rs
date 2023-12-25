@@ -151,7 +151,7 @@ fn public_subkey_payload(key: &EncryptKey) -> Result<Vec<u8>> {
     cursor.write_all(&oid)?;
     cursor.write_u16::<BigEndian>(263)?;
     cursor.write_all(&[0x40])?;
-    cursor.write_all(&key.public_key.to_bytes())?;
+    cursor.write_all(&key.public_key)?;
     // KDF parameters. Length, Reserved, SHA-256, AES-256.
     cursor.write_all(&[3, 1, 8, 9])?;
     Ok(cursor.get_mut().to_vec())
@@ -168,10 +168,9 @@ fn output_unencrypted_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> R
     cursor.write_all(&payload)?;
     // S2K unencrypted i.e. without passphrase protection.
     cursor.write_all(&[0])?;
-    // TODO: Why do we need this? I took it from passphrase2pgp but I do not understand why we
-    // would need to reverse the secret key.
-    let mut reverse_secret_key = [0u8; 32];
-    reverse_secret_key.copy_from_slice(&key.secret_key.to_bytes());
+    // Keys from curve25519-dalek use little endian byte ordering, but OpenPGP (and therefore GPG)
+    // uses big-endian representation of numbers.
+    let mut reverse_secret_key = key.private_key;
     reverse_secret_key.reverse();
     let mpi_key = mpi_encode(&reverse_secret_key);
     cursor.write_all(&mpi_key)?;
@@ -187,10 +186,9 @@ fn output_encrypted_secret_subkey(
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     let payload = public_subkey_payload(key)?;
     cursor.write_all(&payload)?;
-    // TODO: Why do we need this? I took it from passphrase2pgp but I do not understand why we
-    // would need to reverse the secret key.
-    let mut reverse_secret_key = [0u8; 32];
-    reverse_secret_key.copy_from_slice(&key.secret_key.to_bytes());
+    // Keys from curve25519-dalek use little endian byte ordering, but OpenPGP (and therefore GPG)
+    // uses big-endian representation of numbers.
+    let mut reverse_secret_key = key.private_key;
     reverse_secret_key.reverse();
     s2k_encrypt(&reverse_secret_key, passphrase, &mut cursor)?;
     output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
@@ -208,7 +206,7 @@ fn public_key_payload(key: &SignKey) -> Result<Vec<u8>> {
     cursor.write_u16::<BigEndian>(263)?;
     // Prefix octet for EdDSA Point Format.
     cursor.write_all(&[0x40])?;
-    cursor.write_all(key.keypair.public.as_bytes())?;
+    cursor.write_all(&key.public_key)?;
     Ok(cursor.into_inner())
 }
 
@@ -223,7 +221,7 @@ fn output_unencrypted_secret_key(key: &SignKey, out: &mut ByteCursor) -> Result<
     cursor.write_all(&payload)?;
     // S2K unencrypted i.e. without passphrase protection.
     cursor.write_all(&[0])?;
-    let mpi_key = mpi_encode(key.keypair.secret.as_bytes());
+    let mpi_key = mpi_encode(&key.private_key);
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
     output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
@@ -237,7 +235,7 @@ fn output_encrypted_secret_key(
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     let payload = public_key_payload(key)?;
     cursor.write_all(&payload)?;
-    s2k_encrypt(key.keypair.secret.as_bytes(), passphrase, &mut cursor)?;
+    s2k_encrypt(&key.private_key, passphrase, &mut cursor)?;
     output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
 }
 
@@ -297,7 +295,7 @@ fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) 
     hash_u32(packet.len().try_into()?, &mut hasher);
     let hash = hasher.finalize();
     // Sign the hash.
-    let signature = key.keypair.sign(&hash).to_bytes();
+    let signature = key.signing_key.sign(&hash).to_bytes();
     // No unhashed subpackets.
     packet_cursor.write_u16::<BigEndian>(0)?;
     // Push the signature of the hash.
@@ -353,7 +351,7 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
     hash_u32(packet.len().try_into()?, &mut hasher);
     let hash = hasher.finalize();
     // Sign the hash.
-    let signature = key.keypair.sign(&hash).to_bytes();
+    let signature = key.signing_key.sign(&hash).to_bytes();
     // No unhashed subpackets.
     packet_cursor.write_u16::<BigEndian>(0)?;
     // Push the signature of the hash.

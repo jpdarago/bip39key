@@ -9,20 +9,20 @@ edition = "2021"
 aes = "0.8.1"
 anyhow = "1.0"
 base64 = "0.13.0"
-bcrypt-pbkdf = "0.9.0"
+bcrypt-pbkdf = "0.10.0"
 byteorder = "1.4.3"
 cfb-mode = "0.8.1"
-clap = { version = "3.1.13", features = ["derive"] }
+clap = { version = "4.4.11", features = ["derive"] }
 ctr = "0.9.1"
-ed25519-dalek = "1.0.1"
+ed25519-dalek = "2.1.0"
 hex = "0.4.3"
 hmac = "0.12.1"
 inquire = "0.6.2"
-pbkdf2 = "0.11.0"
+pbkdf2 = { version = "0.12.2", features = ["simple"] }
 rand = { version = "0.8.5", features = ["getrandom"] }
-rust-argon2 = "1.0.0"
+rust-argon2 = "2.0.0"
 sha1 = "0.10.0"
 sha2 = "0.10.2"
-textwrap = "0.7"
-tiny-bip39 = "0.8.2"
-x25519-dalek = "1.2.0"
+textwrap = "0.16"
+tiny-bip39 = "1.0.0"
+x25519-dalek = { version = "2.0.0-rc3", features = ["static_secrets"] }
