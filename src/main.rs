@@ -180,14 +180,22 @@ fn main() -> Result<()> {
     }
     let seed = get_seed(&args)?;
     let pass = get_passphrase(&args)?;
-    let keys = Keys::new(
-        &args.user_id,
-        &seed,
-        &pass,
-        args.timestamp.unwrap_or(TIMESTAMP),
-        !args.just_signkey,
-        args.use_concatenation,
-    )
-    .expect("Could not build keys");
+    let keys = if args.use_concatenation {
+        Keys::new_with_concat(
+                &args.user_id,
+                &seed,
+                &pass,
+                args.timestamp.unwrap_or(TIMESTAMP),
+                !args.just_signkey,
+            )
+    } else {
+        Keys::new_with_xor(
+                &args.user_id,
+                &seed,
+                &pass,
+                args.timestamp.unwrap_or(TIMESTAMP),
+                !args.just_signkey,
+            )
+    }.expect("Could not build keys");
     output_keys(&args, &keys)
 }
