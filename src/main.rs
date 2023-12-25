@@ -2,8 +2,10 @@ mod passphrase;
 mod pgp;
 mod seed;
 mod ssh;
+mod keys;
 mod types;
 
+use crate::keys::*;
 use crate::types::*;
 
 use clap::Parser;
@@ -82,28 +84,28 @@ struct Args {
 
 fn write_keys<W: std::io::Write>(
     args: &Args,
-    context: &Context,
+    keys: &Keys,
     mut writer: BufWriter<W>,
 ) -> Result<()> {
     match args.format {
         OutputFormat::Pgp => {
             if args.public_key {
                 if args.armor {
-                    pgp::output_public_armored(context, &mut writer)?;
+                    pgp::output_public_armored(keys, &mut writer)?;
                 } else {
-                    pgp::output_public_as_packets(context, &mut writer)?;
+                    pgp::output_public_as_packets(keys, &mut writer)?;
                 }
             } else if args.armor {
-                pgp::output_armored(context, &mut writer)?;
+                pgp::output_armored(keys, &mut writer)?;
             } else {
-                pgp::output_as_packets(context, &mut writer)?;
+                pgp::output_as_packets(keys, &mut writer)?;
             }
         }
         OutputFormat::Ssh => {
             if args.public_key {
-                ssh::output_public_as_pem(context, &mut writer)?;
+                ssh::output_public_as_pem(keys, &mut writer)?;
             } else {
-                ssh::output_secret_as_pem(context, &mut writer)?;
+                ssh::output_secret_as_pem(keys, &mut writer)?;
             }
         }
     };
@@ -144,7 +146,7 @@ fn get_seed(args: &Args) -> Result<Vec<u8>> {
     seed::decode_phrase(&args.seed_format, stripped.trim())
 }
 
-fn output_keys(args: &Args, context: &Context) -> Result<()> {
+fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
     let filename = if args.interactive {
         Some(Text::new("Provide an output filename for the key: ").prompt()?)
     } else {
@@ -156,9 +158,9 @@ fn output_keys(args: &Args, context: &Context) -> Result<()> {
             eprintln!("Cannot open output file {}: {}", f, err);
             std::process::exit(1);
         }
-        write_keys(args, context, BufWriter::new(&mut output.unwrap()))
+        write_keys(args, keys, BufWriter::new(&mut output.unwrap()))
     } else {
-        write_keys(args, context, BufWriter::new(std::io::stdout()))
+        write_keys(args, keys, BufWriter::new(std::io::stdout()))
     }
 }
 
@@ -178,7 +180,7 @@ fn main() -> Result<()> {
     }
     let seed = get_seed(&args)?;
     let pass = get_passphrase(&args)?;
-    let context = Context::new(
+    let keys = Keys::new(
         &args.user_id,
         &seed,
         &pass,
@@ -187,5 +189,5 @@ fn main() -> Result<()> {
         args.use_concatenation,
     )
     .expect("Could not build keys");
-    output_keys(&args, &context)
+    output_keys(&args, &keys)
 }

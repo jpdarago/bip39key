@@ -1,3 +1,4 @@
+use crate::keys::*;
 use crate::types::*;
 
 use aes::cipher::{AsyncStreamCipher, KeyIvInit};
@@ -362,24 +363,24 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
 }
 
 pub fn output_as_packets<W: Write>(
-    context: &Context,
+    keys: &Keys,
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     let mut buffer = ByteCursor::new(Vec::new());
-    if let Some(passphrase) = &context.passphrase {
-        output_encrypted_secret_key(&context.sign_key, passphrase, &mut buffer)?;
+    if let Some(passphrase) = &keys.passphrase {
+        output_encrypted_secret_key(&keys.sign_key, passphrase, &mut buffer)?;
     } else {
-        output_unencrypted_secret_key(&context.sign_key, &mut buffer)?;
+        output_unencrypted_secret_key(&keys.sign_key, &mut buffer)?;
     }
-    output_user_id(&context.user_id, &mut buffer)?;
-    output_self_signature(&context.sign_key, &context.user_id, &mut buffer)?;
-    if let Some(encrypt_key) = &context.encrypt_key {
-        if let Some(passphrase) = &context.passphrase {
+    output_user_id(&keys.user_id, &mut buffer)?;
+    output_self_signature(&keys.sign_key, &keys.user_id, &mut buffer)?;
+    if let Some(encrypt_key) = &keys.encrypt_key {
+        if let Some(passphrase) = &keys.passphrase {
             output_encrypted_secret_subkey(encrypt_key, passphrase, &mut buffer)?;
         } else {
             output_unencrypted_secret_subkey(encrypt_key, &mut buffer)?;
         }
-        output_subkey_signature(&context.sign_key, encrypt_key, &mut buffer)?;
+        output_subkey_signature(&keys.sign_key, encrypt_key, &mut buffer)?;
     }
     out.write_all(buffer.get_ref())?;
     Ok(())
@@ -399,12 +400,12 @@ fn armor_checksum(bytes: &[u8]) -> u32 {
     crc & 0xFFFFFF
 }
 
-pub fn output_armored<W: Write>(context: &Context, out: &mut std::io::BufWriter<W>) -> Result<()> {
+pub fn output_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) -> Result<()> {
     out.write_all(b"-----BEGIN PGP PRIVATE KEY BLOCK-----\n")?;
     out.write_all(b"Version: GnuPG v2\n\n")?;
     let mut packets_cursor = ByteCursor::new(vec![]);
     let mut buffer = std::io::BufWriter::new(&mut packets_cursor);
-    output_as_packets(context, &mut buffer)?;
+    output_as_packets(keys, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
     out.write_all(textwrap::fill(&base64::encode(&packets), 64).as_bytes())?;
@@ -422,14 +423,14 @@ pub fn output_armored<W: Write>(context: &Context, out: &mut std::io::BufWriter<
 }
 
 pub fn output_public_armored<W: Write>(
-    context: &Context,
+    keys: &Keys,
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     out.write_all(b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n")?;
     out.write_all(b"Version: GnuPG v2\n\n")?;
     let mut packets_cursor = ByteCursor::new(vec![]);
     let mut buffer = std::io::BufWriter::new(&mut packets_cursor);
-    output_public_as_packets(context, &mut buffer)?;
+    output_public_as_packets(keys, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
     out.write_all(textwrap::fill(&base64::encode(&packets), 64).as_bytes())?;
@@ -447,16 +448,16 @@ pub fn output_public_armored<W: Write>(
 }
 
 pub fn output_public_as_packets<W: Write>(
-    context: &Context,
+    keys: &Keys,
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     let mut buffer = ByteCursor::new(Vec::new());
-    output_public_key(&context.sign_key, &mut buffer)?;
-    output_user_id(&context.user_id, &mut buffer)?;
-    output_self_signature(&context.sign_key, &context.user_id, &mut buffer)?;
-    if let Some(encrypt_key) = &context.encrypt_key {
+    output_public_key(&keys.sign_key, &mut buffer)?;
+    output_user_id(&keys.user_id, &mut buffer)?;
+    output_self_signature(&keys.sign_key, &keys.user_id, &mut buffer)?;
+    if let Some(encrypt_key) = &keys.encrypt_key {
         output_public_subkey(encrypt_key, &mut buffer)?;
-        output_subkey_signature(&context.sign_key, encrypt_key, &mut buffer)?;
+        output_subkey_signature(&keys.sign_key, encrypt_key, &mut buffer)?;
     }
     out.write_all(buffer.get_ref())?;
     Ok(())

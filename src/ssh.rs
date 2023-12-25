@@ -1,3 +1,4 @@
+use crate::keys::*;
 use crate::types::*;
 
 use aes::cipher::{KeyIvInit, StreamCipher};
@@ -23,10 +24,10 @@ fn put_string(s: &str, out: &mut ByteCursor) -> Result<()> {
     put_bytes(s.as_bytes(), out)
 }
 
-fn put_public_key(context: &Context, cursor: &mut ByteCursor) -> Result<()> {
+fn put_public_key(keys: &Keys, cursor: &mut ByteCursor) -> Result<()> {
     let mut public_key = ByteCursor::new(Vec::with_capacity(512));
     put_string("ssh-ed25519", &mut public_key)?;
-    put_bytes(&context.sign_key.public_key, &mut public_key)?;
+    put_bytes(&keys.sign_key.public_key, &mut public_key)?;
     put_bytes(public_key.get_ref(), cursor)?;
     Ok(())
 }
@@ -48,23 +49,23 @@ fn put_kdfoptions(salt: &[u8], rounds: u32, cursor: &mut ByteCursor) -> Result<(
     Ok(())
 }
 
-fn put_private_key_payload(context: &Context, check: u32, cursor: &mut ByteCursor) -> Result<()> {
+fn put_private_key_payload(keys: &Keys, check: u32, cursor: &mut ByteCursor) -> Result<()> {
     // checkint times 2.
     put_u32(check, cursor)?;
     put_u32(check, cursor)?;
     put_string("ssh-ed25519", cursor)?;
-    put_bytes(&context.sign_key.public_key, cursor)?;
+    put_bytes(&keys.sign_key.public_key, cursor)?;
     let mut private_payload = ByteCursor::new(Vec::with_capacity(64));
-    private_payload.write_all(&context.sign_key.private_key)?;
-    private_payload.write_all(&context.sign_key.public_key)?;
+    private_payload.write_all(&keys.sign_key.private_key)?;
+    private_payload.write_all(&keys.sign_key.public_key)?;
     put_bytes(private_payload.get_mut(), cursor)?;
-    let comment = context.user_id.user_id.clone();
+    let comment = keys.user_id.user_id.clone();
     put_string(&comment, cursor)?;
     Ok(())
 }
 
 fn put_ssh_key_with_passphrase(
-    context: &Context,
+    keys: &Keys,
     passphrase: &str,
     cursor: &mut ByteCursor,
 ) -> Result<()> {
@@ -82,9 +83,9 @@ fn put_ssh_key_with_passphrase(
     put_kdfoptions(salt, rounds, cursor)?;
     // 1 secret key.
     put_u32(1, cursor)?;
-    put_public_key(context, cursor)?;
+    put_public_key(keys, cursor)?;
     let mut private_key = ByteCursor::new(Vec::with_capacity(512));
-    put_private_key_payload(context, check, &mut private_key)?;
+    put_private_key_payload(keys, check, &mut private_key)?;
     let content = private_key.get_mut();
     pad(16, content);
     // Run BCrypt to build the key and IV for AES 256 cipher, and encrypt the private key
@@ -97,7 +98,7 @@ fn put_ssh_key_with_passphrase(
     Ok(())
 }
 
-fn put_ssh_key_without_passphrase(context: &Context, cursor: &mut ByteCursor) -> Result<()> {
+fn put_ssh_key_without_passphrase(keys: &Keys, cursor: &mut ByteCursor) -> Result<()> {
     // ciphername - none, no encryption.
     put_string("none", cursor)?;
     // kdfname - none, no encryption.
@@ -106,9 +107,9 @@ fn put_ssh_key_without_passphrase(context: &Context, cursor: &mut ByteCursor) ->
     put_u32(0, cursor)?;
     // 1 secret key.
     put_u32(1, cursor)?;
-    put_public_key(context, cursor)?;
+    put_public_key(keys, cursor)?;
     let mut private_key = ByteCursor::new(Vec::with_capacity(512));
-    put_private_key_payload(context, /*check=*/ 0, &mut private_key)?;
+    put_private_key_payload(keys, /*check=*/ 0, &mut private_key)?;
     let content = private_key.get_mut();
     pad(8, content);
     put_bytes(content, cursor)?;
@@ -116,7 +117,7 @@ fn put_ssh_key_without_passphrase(context: &Context, cursor: &mut ByteCursor) ->
 }
 
 pub fn output_secret_as_pem<W: Write>(
-    context: &Context,
+    keys: &Keys,
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     // See https://cvsweb.openbsd.org/src/usr.bin/ssh/PROTOCOL.key?annotate=HEAD
@@ -124,10 +125,10 @@ pub fn output_secret_as_pem<W: Write>(
     out.write_all(b"-----BEGIN OPENSSH PRIVATE KEY-----\n")?;
     let mut cursor = ByteCursor::new(Vec::with_capacity(1024));
     cursor.write_all(b"openssh-key-v1\x00")?;
-    if let Some(passphrase) = &context.passphrase {
-        put_ssh_key_with_passphrase(context, passphrase, &mut cursor)?;
+    if let Some(passphrase) = &keys.passphrase {
+        put_ssh_key_with_passphrase(keys, passphrase, &mut cursor)?;
     } else {
-        put_ssh_key_without_passphrase(context, &mut cursor)?;
+        put_ssh_key_without_passphrase(keys, &mut cursor)?;
     }
     // Output as base64 encoded.
     out.write_all(textwrap::fill(&base64::encode(cursor.get_mut()), 70).as_bytes())?;
@@ -136,16 +137,16 @@ pub fn output_secret_as_pem<W: Write>(
 }
 
 pub fn output_public_as_pem<W: Write>(
-    context: &Context,
+    keys: &Keys,
     out: &mut std::io::BufWriter<W>,
 ) -> Result<()> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(1024));
     put_string("ssh-ed25519", &mut cursor)?;
-    put_bytes(&context.sign_key.public_key, &mut cursor)?;
+    put_bytes(&keys.sign_key.public_key, &mut cursor)?;
     out.write_all(b"ssh-ed25519 ")?;
     out.write_all(base64::encode(cursor.get_mut()).as_bytes())?;
     out.write_all(&[0x20])?;
-    out.write_all(context.user_id.user_id.as_bytes())?;
+    out.write_all(keys.user_id.user_id.as_bytes())?;
     out.write_all(&[0x0a])?;
     Ok(())
 }

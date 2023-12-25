@@ -1,0 +1,113 @@
+use crate::types::*;
+
+pub struct UserId {
+    pub user_id: String,
+}
+
+pub struct SignKey {
+    pub public_key: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH],
+    pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
+    pub signing_key: ed25519_dalek::SigningKey,
+    pub created_timestamp_secs: u32,
+}
+
+impl SignKey {
+    pub fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<SignKey> {
+        let mut input = [0u8; 32];
+        input.copy_from_slice(secret_key_bytes);
+        let secret_key = ed25519_dalek::SigningKey::from_bytes(&input);
+        Ok(SignKey {
+            created_timestamp_secs: timestamp_secs,
+            public_key: secret_key.verifying_key().to_bytes(),
+            private_key: secret_key.to_bytes(),
+            signing_key: secret_key,
+        })
+    }
+}
+
+pub struct EncryptKey {
+    pub public_key: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH],
+    pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
+    pub created_timestamp_secs: u32,
+}
+
+impl EncryptKey {
+    pub fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<EncryptKey> {
+        // Clamp the secret key bytes per Curve25519 specification.
+        // See https://datatracker.ietf.org/doc/html/rfc7748#section-5 for more information.
+        let mut normalized_key = [0u8; 32];
+        normalized_key.copy_from_slice(secret_key_bytes);
+        normalized_key[0] &= 248;
+        normalized_key[31] &= 127;
+        normalized_key[31] |= 64;
+        let encrypt_secret_key: x25519_dalek::StaticSecret = normalized_key.into();
+        let encrypt_public_key = x25519_dalek::PublicKey::from(&encrypt_secret_key);
+        Ok(EncryptKey {
+            created_timestamp_secs: timestamp_secs,
+            public_key: encrypt_public_key.to_bytes(),
+            private_key: encrypt_secret_key.to_bytes(),
+        })
+    }
+}
+
+pub struct Keys {
+    pub user_id: UserId,
+    pub sign_key: SignKey,
+    pub encrypt_key: Option<EncryptKey>,
+    pub passphrase: Option<String>,
+}
+
+impl Keys {
+    pub fn new(
+        user_id: &str,
+        seed: &[u8],
+        passphrase: &Option<String>,
+        timestamp_secs: u32,
+        generate_encrypt_key: bool,
+        use_concatenation: bool,
+    ) -> Result<Keys> {
+        // Derive 64 bytes by running Argon with the user id as salt.
+        let config = argon2::Config {
+            variant: argon2::Variant::Argon2id,
+            version: argon2::Version::Version13,
+            mem_cost: 64 * 1024,
+            time_cost: 32,
+            lanes: 8,
+            secret: &[],
+            ad: &[],
+            hash_length: 64,
+        };
+        let secret_key_bytes = if let Some(pass) = &passphrase {
+            if use_concatenation {
+                let mut bytes = seed.to_vec();
+                bytes.extend_from_slice(pass.as_bytes());
+                argon2::hash_raw(&bytes, user_id.as_bytes(), &config)?
+            } else {
+                let bytes = argon2::hash_raw(seed, user_id.as_bytes(), &config)?;
+                // Generate another buffer with Argon for the passphrase and XOR it.
+                let passphrase_bytes =
+                    argon2::hash_raw(pass.as_bytes(), user_id.as_bytes(), &config)?;
+                bytes
+                    .iter()
+                    .zip(passphrase_bytes.iter())
+                    .map(|(lhs, rhs)| lhs ^ rhs)
+                    .collect()
+            }
+        } else {
+            argon2::hash_raw(seed, user_id.as_bytes(), &config)?
+        };
+        let encrypt_key = if generate_encrypt_key {
+            Some(EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?)
+        } else {
+            None
+        };
+        Ok(Keys {
+            user_id: UserId {
+                user_id: user_id.to_string(),
+            },
+            sign_key: SignKey::new(&secret_key_bytes[..32], timestamp_secs)?,
+            encrypt_key,
+            passphrase: passphrase.clone(),
+        })
+    }
+}
