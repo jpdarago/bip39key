@@ -26,59 +26,42 @@ GPG).
 
 ## Usage
 
-> :warning: New users of `bip39key` should use `-h` option.
+> :warning: New users of `bip39key` should use `-c` option.
 
 ```
-bip39key 1.1.0
+Usage: bip39key [OPTIONS] --user-id <USER_ID>
 
-USAGE:
-    bip39key [OPTIONS] --user-id <USER_ID>
-
-OPTIONS:
-    -a, --armor
-            Output as armored
-
-    -e, --pinentry
-            Request passphrase with pinentry. See README.md for details
-
-    -f, --format <FORMAT>
-            Output format: SSH or PGP [default: pgp] [possible values: pgp, ssh]
-
-    -h, --use-concatenation
-            Use a hash of the concatenation of key and password instead of XOR of the hashes
-
-        --help
-            Print help information
-
-    -i, --input-filename <INPUT_FILENAME>
-            Filename from which to read the mnemonic words
-
-    -j, --just-signkey
-            Only output the sign key for PGP
-
-    -k, --public-key
-            Output the public key
-
-    -o, --output-filename <OUTPUT_FILENAME>
-            Filename where to output the keys, if not present then write to stdout
-
-    -p, --passphrase <PASSPHRASE>
-            Optional passphrase. If set, -e/--pinentry must not be set. See README.md for details
-
-    -q, --interactive
-            Request seed phrase through an interactive CLI prompt
-
-    -s, --seed-format <SEED_FORMAT>
-            Seed Format: BIP39, Electrum [default: bip39] [possible values: bip39, electrum]
-
-    -t, --timestamp <TIMESTAMP>
-            Timestamp (in seconds) for the dates. If unset, use the default 1231006505
-
-    -u, --user-id <USER_ID>
-            RFC 2822 of the user, e.g. "User <user@email.com>"
-
-    -V, --version
-            Print version information
+Options:
+  -u, --user-id <USER_ID>
+          RFC 2822 of the user, e.g. "User <user@email.com>"
+  -i, --input-filename <INPUT_FILENAME>
+          Filename from which to read the mnemonic words
+  -o, --output-filename <OUTPUT_FILENAME>
+          Filename where to output the keys, if not present then write to stdout
+  -t, --timestamp <TIMESTAMP>
+          Timestamp (in seconds) for the dates. If unset, use the default 1231006505
+  -j, --just-signkey
+          Only output the sign key for PGP
+  -f, --format <FORMAT>
+          Output format: SSH or PGP [default: pgp] [possible values: pgp, ssh]
+  -a, --armor
+          Output as armored
+  -k, --public-key
+          Output the public key
+  -p, --passphrase <PASSPHRASE>
+          Optional passphrase. If set, -e/--pinentry must not be set. See README.md for details
+  -e, --pinentry
+          Request passphrase with pinentry. See README.md for details
+  -s, --seed-format <SEED_FORMAT>
+          Seed Format: BIP39, Electrum [default: bip39] [possible values: bip39, electrum]
+  -c, --use-concatenation
+          Use a hash of the concatenation of key and password instead of XOR of the hashes
+  -q, --interactive
+          Request seed phrase through an interactive CLI prompt
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 ## Why BIP39
