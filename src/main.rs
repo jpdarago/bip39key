@@ -81,6 +81,10 @@ struct Args {
     /// Request seed phrase through an interactive CLI prompt.
     #[clap(short = 'q', long)]
     interactive: bool,
+
+    /// Use RFC 9106 settings for Argon2id.
+    #[clap(short = 'r', long)]
+    use_rfc9106_settings: bool,
 }
 
 fn write_keys<W: std::io::Write>(args: &Args, keys: &Keys, mut writer: BufWriter<W>) -> Result<()> {
@@ -194,7 +198,8 @@ fn main() -> Result<()> {
             &seed,
             &pass,
             args.timestamp.unwrap_or(TIMESTAMP),
-            !args.just_signkey,
+            /*generate_encrypt_key=*/ !args.just_signkey,
+            args.use_rfc9106_settings,
         )
     } else {
         Keys::new_with_xor(
@@ -202,7 +207,8 @@ fn main() -> Result<()> {
             &seed,
             &pass,
             args.timestamp.unwrap_or(TIMESTAMP),
-            !args.just_signkey,
+            /*generate_encrypt_key=*/ !args.just_signkey,
+            args.use_rfc9106_settings,
         )
     }
     .expect("Could not build keys");

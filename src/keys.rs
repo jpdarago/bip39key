@@ -57,16 +57,22 @@ pub struct Keys {
     pub passphrase: Option<String>,
 }
 
-fn run_argon(bytes: &[u8], user_id: &str) -> Result<Vec<u8>> {
-    let config = argon2::Config {
-        variant: argon2::Variant::Argon2id,
-        version: argon2::Version::Version13,
-        mem_cost: 64 * 1024,
-        time_cost: 32,
-        lanes: 8,
-        secret: &[],
-        ad: &[],
-        hash_length: 64,
+fn run_argon(bytes: &[u8], user_id: &str, use_rfc9106_settings: bool) -> Result<Vec<u8>> {
+    let config = if use_rfc9106_settings {
+        let mut result = argon2::Config::rfc9106();
+        result.hash_length = 64;
+        result
+    } else {
+        argon2::Config {
+            variant: argon2::Variant::Argon2id,
+            version: argon2::Version::Version13,
+            mem_cost: 64 * 1024,
+            time_cost: 32,
+            lanes: 8,
+            secret: &[],
+            ad: &[],
+            hash_length: 64,
+        }
     };
     Ok(argon2::hash_raw(bytes, user_id.as_bytes(), &config)?)
 }
@@ -99,14 +105,15 @@ impl Keys {
         passphrase: &Option<String>,
         timestamp_secs: u32,
         generate_encrypt_key: bool,
+        use_rfc9106_settings: bool,
     ) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let secret_key_bytes = if let Some(pass) = &passphrase {
             let mut bytes = seed.to_vec();
             bytes.extend_from_slice(pass.as_bytes());
-            run_argon(&bytes, user_id)?
+            run_argon(&bytes, user_id, use_rfc9106_settings)?
         } else {
-            run_argon(seed, user_id)?
+            run_argon(seed, user_id, use_rfc9106_settings)?
         };
         Self::build_keys(
             &secret_key_bytes,
@@ -123,19 +130,20 @@ impl Keys {
         passphrase: &Option<String>,
         timestamp_secs: u32,
         generate_encrypt_key: bool,
+        use_rfc9106_settings: bool,
     ) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let secret_key_bytes = if let Some(pass) = &passphrase {
-            let bytes = run_argon(seed, user_id)?;
+            let bytes = run_argon(seed, user_id, use_rfc9106_settings)?;
             // Generate another buffer with Argon for the passphrase and XOR it.
-            let passphrase_bytes = run_argon(pass.as_bytes(), user_id)?;
+            let passphrase_bytes = run_argon(pass.as_bytes(), user_id, use_rfc9106_settings)?;
             bytes
                 .iter()
                 .zip(passphrase_bytes.iter())
                 .map(|(lhs, rhs)| lhs ^ rhs)
                 .collect()
         } else {
-            run_argon(seed, user_id)?
+            run_argon(seed, user_id, use_rfc9106_settings)?
         };
         Self::build_keys(
             &secret_key_bytes,
