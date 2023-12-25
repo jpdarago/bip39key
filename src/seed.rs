@@ -3,7 +3,6 @@ use crate::types::*;
 use anyhow::bail;
 use bip39::{Language, Mnemonic};
 use hmac::Mac;
-use inquire::autocompletion::{Autocomplete, Replacement};
 use inquire::Text;
 use lazy_static::lazy_static;
 use pbkdf2::password_hash::{PasswordHasher, SaltString};
@@ -74,59 +73,33 @@ pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> 
     }
 }
 
-#[derive(Clone, Default)]
-struct Completer {
-    words: Vec<String>,
-}
-
-impl Completer {
-    fn new() -> Result<Completer> {
-        let wordlist_filepath: std::path::PathBuf =
-            [env!("CARGO_MANIFEST_DIR"), "resources/bip39.txt"]
-                .iter()
-                .collect();
-        let wordfile = std::fs::File::open(wordlist_filepath)?;
-        let mut words: Vec<String> = Vec::new();
-        for line in std::io::BufReader::new(wordfile).lines() {
-            words.push(line?.trim().to_string());
-        }
-        Ok(Completer { words })
+fn wordlist() -> Result<Vec<String>> {
+    let wordlist_filepath: std::path::PathBuf = [env!("CARGO_MANIFEST_DIR"), "resources/bip39.txt"]
+        .iter()
+        .collect();
+    let wordfile = std::fs::File::open(wordlist_filepath)?;
+    let mut words: Vec<String> = Vec::new();
+    for line in std::io::BufReader::new(wordfile).lines() {
+        words.push(line?.trim().to_string());
     }
+    Ok(words)
 }
 
 lazy_static! {
-    static ref COMPLETER: Completer = Completer::new().expect("Failed to read wordlist");
+    static ref WORDLIST: Vec<String> = wordlist().expect("Failed to read wordlist");
 }
 
-impl Autocomplete for Completer {
-    fn get_completion(
-        &mut self,
-        input: &str,
-        highlighted_suggestion: Option<String>,
-    ) -> std::result::Result<
-        Option<std::string::String>,
-        Box<(dyn std::error::Error + Send + Sync + 'static)>,
-    > {
-        Ok(match highlighted_suggestion {
-            Some(suggestion) => Replacement::Some(suggestion),
-            None => Replacement::Some(input.to_string()),
-        })
-    }
-
-    fn get_suggestions(
-        &mut self,
-        input: &str,
-    ) -> std::result::Result<
-        Vec<std::string::String>,
-        Box<(dyn std::error::Error + Send + Sync + 'static)>,
-    > {
-        Ok(self
-            .words
-            .iter()
-            .filter(|s| s.to_lowercase().starts_with(input))
-            .map(String::from)
-            .collect())
-    }
+fn suggest(
+    input: &str,
+) -> std::result::Result<
+    Vec<std::string::String>,
+    Box<(dyn std::error::Error + Send + Sync + 'static)>,
+> {
+    Ok(WORDLIST
+        .iter()
+        .filter(|s| s.to_lowercase().starts_with(input))
+        .map(String::from)
+        .collect())
 }
 
 pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
@@ -146,7 +119,7 @@ pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
                 break;
             }
             let input = Text::new(&format!("Word (currently {}): ", i + 1))
-                .with_autocomplete(Completer::new()?)
+                .with_autocomplete(&suggest)
                 .prompt()?;
             for word in input.split_whitespace() {
                 result.push(word.trim().to_string());
