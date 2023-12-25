@@ -131,14 +131,30 @@ impl Autocomplete for Completer {
 
 pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
     println!("Please input a {} phrase: ", seed_format);
+    io::stdout().flush().unwrap();
     loop {
         let mut result = vec![];
-        for i in 0..12 {
-            let input = Text::new(&format!("Word {}: ", i + 1))
+        let mut i = 0;
+        loop {
+            if i > 12 {
+                println!("Too many words");
+                io::stdout().flush().unwrap();
+                result.clear();
+                break;
+            }
+            if i == 12 {
+                break;
+            }
+            let input = Text::new(&format!("Word (currently {}): ", i + 1))
                 .with_autocomplete(Completer::new()?)
                 .prompt()?;
-            let word: &str = input.trim();
-            result.push(word.to_string());
+            for word in input.split_whitespace() {
+                result.push(word.trim().to_string());
+                i += 1;
+            }
+        }
+        if result.is_empty() {
+            continue;
         }
         match decode_phrase(seed_format, &result.join(" ")) {
             Ok(phrase) => {
