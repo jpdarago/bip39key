@@ -123,8 +123,8 @@ impl Autocomplete for Completer {
         Ok(self
             .words
             .iter()
-            .filter(|s| s.to_lowercase().starts_with(&input))
-            .map(|s| String::from(s))
+            .filter(|s| s.to_lowercase().starts_with(input))
+            .map(String::from)
             .collect())
     }
 }
