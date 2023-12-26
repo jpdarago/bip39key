@@ -12,6 +12,7 @@ use anyhow::bail;
 use clap::Parser;
 use inquire::Text;
 use std::io::BufWriter;
+use std::io::IsTerminal;
 use std::io::Read;
 
 // Default creation time: timestamp of the Bitcoin genesis block. Any timestamp would
@@ -87,16 +88,16 @@ struct Args {
     use_rfc9106_settings: bool,
 }
 
-fn write_keys<W: std::io::Write>(args: &Args, keys: &Keys, mut writer: BufWriter<W>) -> Result<()> {
+fn write_keys<W: std::io::Write>(args: &Args, keys: &Keys, mut writer: BufWriter<W>, output_as_text: bool) -> Result<()> {
     match args.format {
         OutputFormat::Pgp => {
             if args.public_key {
-                if args.armor {
+                if output_as_text {
                     pgp::output_public_armored(keys, &mut writer)?;
                 } else {
                     pgp::output_public_as_packets(keys, &mut writer)?;
                 }
-            } else if args.armor {
+            } else if output_as_text {
                 pgp::output_armored(keys, &mut writer)?;
             } else {
                 pgp::output_as_packets(keys, &mut writer)?;
@@ -147,21 +148,30 @@ fn get_seed(args: &Args) -> Result<Vec<u8>> {
     seed::decode_phrase(&args.seed_format, stripped.trim())
 }
 
+fn output_keys_to_stdout(args: &Args, keys: &Keys) -> Result<()> {
+    let stdout = std::io::stdout();
+    let is_terminal = stdout.is_terminal();
+    write_keys(args, keys, BufWriter::new(stdout), /*output_as_text=*/args.armor || is_terminal)
+}
+
 fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
     let filename = if args.interactive {
-        Some(Text::new("Provide an output filename for the key: ").prompt()?)
+        Some(Text::new("Provide an output filename for the key (empty for stdout): ").prompt()?)
     } else {
         args.output_filename.as_ref().map(|f| f.to_string())
     };
     if let Some(f) = filename {
+        if f.is_empty() {
+            return output_keys_to_stdout(args, keys);
+        }
         let output = std::fs::File::create(&f);
         if let Err(err) = output {
             eprintln!("Cannot open output file {}: {}", f, err);
             std::process::exit(1);
         }
-        write_keys(args, keys, BufWriter::new(&mut output.unwrap()))
+        write_keys(args, keys, BufWriter::new(&mut output.unwrap()), /*output_as_text=*/args.armor)
     } else {
-        write_keys(args, keys, BufWriter::new(std::io::stdout()))
+        output_keys_to_stdout(args, keys)
     }
 }
 
