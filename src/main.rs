@@ -88,7 +88,12 @@ struct Args {
     use_rfc9106_settings: bool,
 }
 
-fn write_keys<W: std::io::Write>(args: &Args, keys: &Keys, mut writer: BufWriter<W>, output_as_text: bool) -> Result<()> {
+fn write_keys<W: std::io::Write>(
+    args: &Args,
+    keys: &Keys,
+    mut writer: BufWriter<W>,
+    output_as_text: bool,
+) -> Result<()> {
     match args.format {
         OutputFormat::Pgp => {
             if args.public_key {
@@ -151,7 +156,12 @@ fn get_seed(args: &Args) -> Result<Vec<u8>> {
 fn output_keys_to_stdout(args: &Args, keys: &Keys) -> Result<()> {
     let stdout = std::io::stdout();
     let is_terminal = stdout.is_terminal();
-    write_keys(args, keys, BufWriter::new(stdout), /*output_as_text=*/args.armor || is_terminal)
+    write_keys(
+        args,
+        keys,
+        BufWriter::new(stdout),
+        /*output_as_text=*/ args.armor || is_terminal,
+    )
 }
 
 fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
@@ -169,7 +179,12 @@ fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
             eprintln!("Cannot open output file {}: {}", f, err);
             std::process::exit(1);
         }
-        write_keys(args, keys, BufWriter::new(&mut output.unwrap()), /*output_as_text=*/args.armor)
+        write_keys(
+            args,
+            keys,
+            BufWriter::new(&mut output.unwrap()),
+            /*output_as_text=*/ args.armor,
+        )
     } else {
         output_keys_to_stdout(args, keys)
     }
