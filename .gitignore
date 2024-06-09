@@ -2,3 +2,4 @@
 NOTES.html
 .cargo
 *.txt
+.direnv
