@@ -13,6 +13,8 @@
     rustfmt
   ];
 
+  env.RUST_ANALYZER_LOCATION = "${pkgs.rust-analyzer}/bin/rust-analyzer";
+
   languages = {
     python.enable = true;
     rust.enable = true;
