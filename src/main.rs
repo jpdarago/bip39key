@@ -18,7 +18,7 @@ use std::io::Read;
 // Default creation time: timestamp of the Bitcoin genesis block. Any timestamp would
 // work but this one is fairly recent, well established, and stored in a decentralized
 // database.
-const TIMESTAMP: u32 = 1231006505;
+const CREATION_TIMESTAMP: i64 = 1231006505;
 
 #[derive(PartialEq, Eq, Clone, clap::ValueEnum, Debug)]
 enum OutputFormat {
@@ -41,9 +41,17 @@ struct Args {
     #[clap(short, long)]
     output_filename: Option<String>,
 
-    /// Timestamp (in seconds) for the dates. If unset, use the default 1231006505.
-    #[clap(short, long)]
-    timestamp: Option<u32>,
+    /// Timestamp (as unix timestamp in seconds) for the dates. If unset, use the default 1231006505.
+    #[clap(short, long, hide = true)]
+    timestamp: Option<i64>,
+
+    /// Creation timestamp (as unix timestamp in seconds). If unset, uses the genesis block (1231006505).
+    #[clap(short = 'd', long)]
+    creation_timestamp: Option<i64>,
+
+    /// Creation timestamp (as unix timestamp in seconds). If unset, the keys do not expire.
+    #[clap(short = 'y', long)]
+    expiration_timestamp: Option<i64>,
 
     /// Only output the sign key for PGP.
     #[clap(short, long)]
@@ -190,7 +198,26 @@ fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
     }
 }
 
+fn get_creation_timestamp_secs(args: &Args) -> i64 {
+    args.creation_timestamp
+        .or(args.timestamp)
+        .unwrap_or(CREATION_TIMESTAMP)
+}
+
 fn validate(args: &Args) -> Result<()> {
+    if args.creation_timestamp.is_some() && args.timestamp.is_some() {
+        bail!("--timestamp (-t) flag is deprecated, use --creation-timestamp");
+    }
+    let creation_timestamp_secs = get_creation_timestamp_secs(args);
+    if let Some(expiration_secs) = args.expiration_timestamp {
+        if expiration_secs < creation_timestamp_secs {
+            bail!(
+                "--expiration-timestamp is before creation timestamp: {} vs {}",
+                expiration_secs,
+                creation_timestamp_secs
+            );
+        }
+    }
     if args.just_signkey && args.format == OutputFormat::Ssh {
         bail!("Subkey option (--subkey/-s) only works with PGP output format.");
     }
@@ -215,6 +242,8 @@ fn validate(args: &Args) -> Result<()> {
 fn main() -> Result<()> {
     let args = Args::parse();
     validate(&args)?;
+    let creation_timestamp_secs = get_creation_timestamp_secs(&args);
+    let expiration_timestamp_secs = args.expiration_timestamp;
     let seed = get_seed(&args)?;
     let pass = get_passphrase(&args)?;
     let keys = if args.use_concatenation {
@@ -222,7 +251,8 @@ fn main() -> Result<()> {
             &args.user_id,
             &seed,
             &pass,
-            args.timestamp.unwrap_or(TIMESTAMP),
+            creation_timestamp_secs,
+            expiration_timestamp_secs,
             /*generate_encrypt_key=*/ !args.just_signkey,
             args.use_rfc9106_settings,
         )
@@ -231,7 +261,8 @@ fn main() -> Result<()> {
             &args.user_id,
             &seed,
             &pass,
-            args.timestamp.unwrap_or(TIMESTAMP),
+            creation_timestamp_secs,
+            expiration_timestamp_secs,
             /*generate_encrypt_key=*/ !args.just_signkey,
             args.use_rfc9106_settings,
         )

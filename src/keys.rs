@@ -8,16 +8,22 @@ pub struct SignKey {
     pub public_key: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH],
     pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
     pub signing_key: ed25519_dalek::SigningKey,
-    pub created_timestamp_secs: u32,
+    pub creation_timestamp_secs: i64,
+    pub expiration_timestamp_secs: Option<i64>,
 }
 
 impl SignKey {
-    pub fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<SignKey> {
+    pub fn new(
+        secret_key_bytes: &[u8],
+        creation_timestamp_secs: i64,
+        expiration_timestamp_secs: Option<i64>,
+    ) -> Result<SignKey> {
         let mut input = [0u8; 32];
         input.copy_from_slice(secret_key_bytes);
         let secret_key = ed25519_dalek::SigningKey::from_bytes(&input);
         Ok(SignKey {
-            created_timestamp_secs: timestamp_secs,
+            creation_timestamp_secs,
+            expiration_timestamp_secs,
             public_key: secret_key.verifying_key().to_bytes(),
             private_key: secret_key.to_bytes(),
             signing_key: secret_key,
@@ -28,11 +34,16 @@ impl SignKey {
 pub struct EncryptKey {
     pub public_key: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH],
     pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
-    pub created_timestamp_secs: u32,
+    pub creation_timestamp_secs: i64,
+    pub expiration_timestamp_secs: Option<i64>,
 }
 
 impl EncryptKey {
-    pub fn new(secret_key_bytes: &[u8], timestamp_secs: u32) -> Result<EncryptKey> {
+    pub fn new(
+        secret_key_bytes: &[u8],
+        creation_timestamp_secs: i64,
+        expiration_timestamp_secs: Option<i64>,
+    ) -> Result<EncryptKey> {
         // Clamp the secret key bytes per Curve25519 specification.
         // See https://datatracker.ietf.org/doc/html/rfc7748#section-5 for more information.
         let mut normalized_key = [0u8; 32];
@@ -43,7 +54,8 @@ impl EncryptKey {
         let encrypt_secret_key: x25519_dalek::StaticSecret = normalized_key.into();
         let encrypt_public_key = x25519_dalek::PublicKey::from(&encrypt_secret_key);
         Ok(EncryptKey {
-            created_timestamp_secs: timestamp_secs,
+            creation_timestamp_secs,
+            expiration_timestamp_secs,
             public_key: encrypt_public_key.to_bytes(),
             private_key: encrypt_secret_key.to_bytes(),
         })
@@ -81,7 +93,8 @@ impl Keys {
     fn build_keys(
         secret_key_bytes: &[u8],
         user_id: &str,
-        timestamp_secs: u32,
+        creation_timestamp_secs: i64,
+        expiration_timestamp_secs: Option<i64>,
         generate_encrypt_key: bool,
         pass: &Option<String>,
     ) -> Result<Keys> {
@@ -89,9 +102,17 @@ impl Keys {
             user_id: UserId {
                 user_id: user_id.to_string(),
             },
-            sign_key: SignKey::new(&secret_key_bytes[..32], timestamp_secs)?,
+            sign_key: SignKey::new(
+                &secret_key_bytes[..32],
+                creation_timestamp_secs,
+                expiration_timestamp_secs,
+            )?,
             encrypt_key: if generate_encrypt_key {
-                Some(EncryptKey::new(&secret_key_bytes[32..], timestamp_secs)?)
+                Some(EncryptKey::new(
+                    &secret_key_bytes[32..],
+                    creation_timestamp_secs,
+                    expiration_timestamp_secs,
+                )?)
             } else {
                 None
             },
@@ -103,7 +124,8 @@ impl Keys {
         user_id: &str,
         seed: &[u8],
         passphrase: &Option<String>,
-        timestamp_secs: u32,
+        creation_timestamp_secs: i64,
+        expiration_timestamp_secs: Option<i64>,
         generate_encrypt_key: bool,
         use_rfc9106_settings: bool,
     ) -> Result<Keys> {
@@ -118,7 +140,8 @@ impl Keys {
         Self::build_keys(
             &secret_key_bytes,
             user_id,
-            timestamp_secs,
+            creation_timestamp_secs,
+            expiration_timestamp_secs,
             generate_encrypt_key,
             passphrase,
         )
@@ -128,7 +151,8 @@ impl Keys {
         user_id: &str,
         seed: &[u8],
         passphrase: &Option<String>,
-        timestamp_secs: u32,
+        creation_timestamp_secs: i64,
+        expiration_timestamp_secs: Option<i64>,
         generate_encrypt_key: bool,
         use_rfc9106_settings: bool,
     ) -> Result<Keys> {
@@ -148,7 +172,8 @@ impl Keys {
         Self::build_keys(
             &secret_key_bytes,
             user_id,
-            timestamp_secs,
+            creation_timestamp_secs,
+            expiration_timestamp_secs,
             generate_encrypt_key,
             passphrase,
         )
