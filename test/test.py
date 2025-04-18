@@ -8,9 +8,11 @@ import sys
 import tempfile
 import unittest
 
+
 def change_permissions(filename, permissions):
     if platform.system() != "Windows":
         os.chmod(filename, permissions)
+
 
 def run_command(cmd, stdinput=None, env={}):
     with subprocess.Popen(
@@ -140,9 +142,9 @@ class Bip39KeyTest(unittest.TestCase):
     def setUpClass(cls):
         check_binary("gpg", "Please install GNU Privacy Guard.")
         check_binary("ssh-keygen", "Please install OpenSSH.")
-        subprocess.run(['gpgconf', '--kill', 'gpg-agent'], check=True)
+        subprocess.run(["gpgconf", "--kill", "gpg-agent"], check=True)
         try:
-            subprocess.run(['gpg-agent', '--daemon', "--verbose"], check=True)
+            subprocess.run(["gpg-agent", "--daemon", "--verbose"], check=True)
         except subprocess.CalledProcessError as e:
             pass
         print("Running cargo...", end="", flush=True)
@@ -231,17 +233,17 @@ class Bip39KeyTest(unittest.TestCase):
             )
 
     def test_gpg_import_with_passphrase(self):
-     with GPG() as gpg:
-        stdout, _ = run_bip39key(BIP39, USERID, ["-p", PASS])
-        passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
-        self.run_gpg_import(gpg, key=stdout, password=PASS)
-        keysout, _ = gpg.run(["--with-colons", "--list-keys"])
-        keys = parse_gpg_keys(keysout)
-        self.check_key(
-            keys,
-            fp="973FB9F6845B59C12544D62695C556EA825BA259",
-            subfp="95C556EA825BA259",
-        )
+        with GPG() as gpg:
+            stdout, _ = run_bip39key(BIP39, USERID, ["-p", PASS])
+            passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
+            self.run_gpg_import(gpg, key=stdout, password=PASS)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.check_key(
+                keys,
+                fp="973FB9F6845B59C12544D62695C556EA825BA259",
+                subfp="95C556EA825BA259",
+            )
 
     def test_ssh(self):
         secretkey, _ = run_bip39key(BIP39, USERID, ["-f", "ssh"])
@@ -286,84 +288,145 @@ class Bip39KeyTest(unittest.TestCase):
             run_ssh_keygen(stdout, passphrase="badpassword")
 
     def test_golden_with_passphrase(self):
-        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
+        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(
+            " "
+        )
         password = "magic-password"
-        userid="Integration Test <integration@test.com>"
+        userid = "Integration Test <integration@test.com>"
         stdout, stderr = run_bip39key(bip39, userid, ["-p", password])
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
-            message, _ = gpg.run([
-                "--passphrase", password,
-                "--pinentry-mode", "loopback",
-                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-with-passphrase.gpg")
-            ])
+            message, _ = gpg.run(
+                [
+                    "--passphrase",
+                    password,
+                    "--pinentry-mode",
+                    "loopback",
+                    "--decrypt",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "message-with-passphrase.gpg",
+                    ),
+                ]
+            )
             self.assertEqual(message, b"Secret message\n")
 
     def test_golden_without_passphrase(self):
-        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
-        userid="Integration Test <integration@test.com>"
+        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(
+            " "
+        )
+        userid = "Integration Test <integration@test.com>"
         stdout, stderr = run_bip39key(bip39, userid)
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=None)
-            message, _ = gpg.run([
-                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-without-passphrase.gpg")
-            ])
+            message, _ = gpg.run(
+                [
+                    "--decrypt",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "message-without-passphrase.gpg",
+                    ),
+                ]
+            )
             self.assertEqual(message, b"Secret message!!\n")
 
     def test_golden_concatenated(self):
-        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(" ")
+        bip39 = "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen".split(
+            " "
+        )
         password = "magic-password"
-        userid="Integration Test <integration@test.com>"
+        userid = "Integration Test <integration@test.com>"
         stdout, stderr = run_bip39key(bip39, userid, ["-c", "-p", password])
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
-            message, _ = gpg.run([
-                "--passphrase", password,
-                "--pinentry-mode", "loopback",
-                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-concatenated.gpg")
-            ])
+            message, _ = gpg.run(
+                [
+                    "--passphrase",
+                    password,
+                    "--pinentry-mode",
+                    "loopback",
+                    "--decrypt",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "message-concatenated.gpg",
+                    ),
+                ]
+            )
             self.assertEqual(message, b"Secret message!!\n")
 
     def test_golden_electrum(self):
-        electrum = "cause shine enable penalty moral toy undo tree bike satisfy narrow upon".split(" ")
+        electrum = "cause shine enable penalty moral toy undo tree bike satisfy narrow upon".split(
+            " "
+        )
         password = "magic-password"
-        userid="Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(electrum, userid, ["-p", password, "-s", "electrum"])
+        userid = "Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(
+            electrum, userid, ["-p", password, "-s", "electrum"]
+        )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
-            message, _ = gpg.run([
-                "--passphrase", password,
-                "--pinentry-mode", "loopback",
-                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-electrum.gpg")
-            ])
+            message, _ = gpg.run(
+                [
+                    "--passphrase",
+                    password,
+                    "--pinentry-mode",
+                    "loopback",
+                    "--decrypt",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "message-electrum.gpg",
+                    ),
+                ]
+            )
             self.assertEqual(message, b"Secret message!!\n")
 
     def test_golden_electrum_concatenated(self):
-        electrum = "cause shine enable penalty moral toy undo tree bike satisfy narrow upon".split(" ")
+        electrum = "cause shine enable penalty moral toy undo tree bike satisfy narrow upon".split(
+            " "
+        )
         password = "magic-password"
-        userid="Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(electrum, userid, ["-c", "-p", password, "-s", "electrum"])
+        userid = "Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(
+            electrum, userid, ["-c", "-p", password, "-s", "electrum"]
+        )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
-            message, _ = gpg.run([
-                "--passphrase", password,
-                "--pinentry-mode", "loopback",
-                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-electrum-concatenated.gpg")
-            ])
+            message, _ = gpg.run(
+                [
+                    "--passphrase",
+                    password,
+                    "--pinentry-mode",
+                    "loopback",
+                    "--decrypt",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "message-electrum-concatenated.gpg",
+                    ),
+                ]
+            )
             self.assertEqual(message, b"Secret message!!\n")
 
     def test_from_prompt(self):
-        bip39 = "switch limit barely shoot ritual reveal bomb obey luxury around language build".split(" ")
+        bip39 = "switch limit barely shoot ritual reveal bomb obey luxury around language build".split(
+            " "
+        )
         password = "magic-password"
-        userid="Integration Test <integration@test.com>"
+        userid = "Integration Test <integration@test.com>"
         stdout, stderr = run_bip39key(bip39, userid, ["-p", password])
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
-            message, _ = gpg.run([
-                "--passphrase", password,
-                "--pinentry-mode", "loopback",
-                "--decrypt", os.path.join(os.path.dirname(os.path.abspath(__file__)), "message-prompt.gpg")
-            ])
+            message, _ = gpg.run(
+                [
+                    "--passphrase",
+                    password,
+                    "--pinentry-mode",
+                    "loopback",
+                    "--decrypt",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "message-prompt.gpg"
+                    ),
+                ]
+            )
             self.assertEqual(message, b"Secret message!!\n")
 
 
