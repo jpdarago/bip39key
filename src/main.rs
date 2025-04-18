@@ -256,28 +256,20 @@ fn main() -> Result<()> {
     let expiration_timestamp_secs = args.expiration_timestamp;
     let seed = get_seed(&args)?;
     let pass = get_passphrase(&args)?;
+    let settings = KeySettings {
+        user_id: args.user_id.clone(),
+        seed,
+        passphrase: pass,
+        creation_timestamp_secs,
+        expiration_timestamp_secs,
+        generate_encrypt_key: !args.just_signkey,
+        use_rfc9106_settings: args.use_rfc9106_settings,
+        use_authorization_for_sign_key: args.authorization_for_sign_key,
+    };
     let keys = if args.use_concatenation {
-        Keys::new_with_concat(
-            &args.user_id,
-            &seed,
-            &pass,
-            creation_timestamp_secs,
-            expiration_timestamp_secs,
-            /*generate_encrypt_key=*/ !args.just_signkey,
-            args.use_rfc9106_settings,
-            args.authorization_for_sign_key,
-        )
+        Keys::new_with_concat(settings)
     } else {
-        Keys::new_with_xor(
-            &args.user_id,
-            &seed,
-            &pass,
-            creation_timestamp_secs,
-            expiration_timestamp_secs,
-            /*generate_encrypt_key=*/ !args.just_signkey,
-            args.use_rfc9106_settings,
-            args.authorization_for_sign_key,
-        )
+        Keys::new_with_xor(settings)
     }
     .expect("Could not build keys");
     output_keys(&args, &keys)

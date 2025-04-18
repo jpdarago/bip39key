@@ -92,99 +92,84 @@ fn run_argon(bytes: &[u8], user_id: &str, use_rfc9106_settings: bool) -> Result<
     Ok(argon2::hash_raw(bytes, user_id.as_bytes(), &config)?)
 }
 
+pub struct KeySettings {
+    pub user_id: String,
+    pub seed: Vec<u8>,
+    pub passphrase: Option<String>,
+    pub creation_timestamp_secs: i64,
+    pub expiration_timestamp_secs: Option<i64>,
+    pub generate_encrypt_key: bool,
+    pub use_rfc9106_settings: bool,
+    pub use_authorization_for_sign_key: bool,
+}
+
 impl Keys {
-    fn build_keys(
-        secret_key_bytes: &[u8],
-        user_id: &str,
-        creation_timestamp_secs: i64,
-        expiration_timestamp_secs: Option<i64>,
-        generate_encrypt_key: bool,
-        pass: &Option<String>,
-        use_authorization_for_sign_key: bool,
-    ) -> Result<Keys> {
+    fn build_keys(secret_key_bytes: &[u8], settings: KeySettings) -> Result<Keys> {
         Ok(Keys {
             user_id: UserId {
-                user_id: user_id.to_string(),
+                user_id: settings.user_id,
             },
             sign_key: SignKey::new(
                 &secret_key_bytes[..32],
-                creation_timestamp_secs,
-                expiration_timestamp_secs,
-                use_authorization_for_sign_key,
+                settings.creation_timestamp_secs,
+                settings.expiration_timestamp_secs,
+                settings.use_authorization_for_sign_key,
             )?,
-            encrypt_key: if generate_encrypt_key {
+            encrypt_key: if settings.generate_encrypt_key {
                 Some(EncryptKey::new(
                     &secret_key_bytes[32..],
-                    creation_timestamp_secs,
-                    expiration_timestamp_secs,
+                    settings.creation_timestamp_secs,
+                    settings.expiration_timestamp_secs,
                 )?)
             } else {
                 None
             },
-            passphrase: pass.clone(),
+            passphrase: settings.passphrase,
         })
     }
 
-    pub fn new_with_concat(
-        user_id: &str,
-        seed: &[u8],
-        passphrase: &Option<String>,
-        creation_timestamp_secs: i64,
-        expiration_timestamp_secs: Option<i64>,
-        generate_encrypt_key: bool,
-        use_rfc9106_settings: bool,
-        use_authorization_for_sign_key: bool,
-    ) -> Result<Keys> {
+    pub fn new_with_concat(settings: KeySettings) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
-        let secret_key_bytes = if let Some(pass) = &passphrase {
-            let mut bytes = seed.to_vec();
+        let secret_key_bytes = if let Some(pass) = &settings.passphrase {
+            let mut bytes = settings.seed.to_vec();
             bytes.extend_from_slice(pass.as_bytes());
-            run_argon(&bytes, user_id, use_rfc9106_settings)?
+            run_argon(&bytes, &settings.user_id, settings.use_rfc9106_settings)?
         } else {
-            run_argon(seed, user_id, use_rfc9106_settings)?
+            run_argon(
+                &settings.seed,
+                &settings.user_id,
+                settings.use_rfc9106_settings,
+            )?
         };
-        Self::build_keys(
-            &secret_key_bytes,
-            user_id,
-            creation_timestamp_secs,
-            expiration_timestamp_secs,
-            generate_encrypt_key,
-            passphrase,
-            use_authorization_for_sign_key,
-        )
+        Self::build_keys(&secret_key_bytes, settings)
     }
 
-    pub fn new_with_xor(
-        user_id: &str,
-        seed: &[u8],
-        passphrase: &Option<String>,
-        creation_timestamp_secs: i64,
-        expiration_timestamp_secs: Option<i64>,
-        generate_encrypt_key: bool,
-        use_rfc9106_settings: bool,
-        use_authorization_for_sign_key: bool,
-    ) -> Result<Keys> {
-        // Derive 64 bytes by running Argon with the user id as salt.
-        let secret_key_bytes = if let Some(pass) = &passphrase {
-            let bytes = run_argon(seed, user_id, use_rfc9106_settings)?;
+    pub fn new_with_xor(settings: KeySettings) -> Result<Keys> {
+        // Derive 64 bytes by running Argon with the user id as salt
+        let secret_key_bytes = if let Some(pass) = &settings.passphrase {
+            let bytes = run_argon(
+                &settings.seed,
+                &settings.user_id,
+                settings.use_rfc9106_settings,
+            )?;
             // Generate another buffer with Argon for the passphrase and XOR it.
-            let passphrase_bytes = run_argon(pass.as_bytes(), user_id, use_rfc9106_settings)?;
+            let passphrase_bytes = run_argon(
+                pass.as_bytes(),
+                &settings.user_id,
+                settings.use_rfc9106_settings,
+            )?;
             bytes
                 .iter()
                 .zip(passphrase_bytes.iter())
                 .map(|(lhs, rhs)| lhs ^ rhs)
                 .collect()
         } else {
-            run_argon(seed, user_id, use_rfc9106_settings)?
+            run_argon(
+                &settings.seed,
+                &settings.user_id,
+                settings.use_rfc9106_settings,
+            )?
         };
-        Self::build_keys(
-            &secret_key_bytes,
-            user_id,
-            creation_timestamp_secs,
-            expiration_timestamp_secs,
-            generate_encrypt_key,
-            passphrase,
-            use_authorization_for_sign_key,
-        )
+        Self::build_keys(&secret_key_bytes, settings)
     }
 }
