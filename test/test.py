@@ -91,7 +91,7 @@ def run_ssh_keygen(stdin, passphrase=""):
 
 def run_bip39key(bip39, userid, flags=[]):
     binary = os.path.join("target", "release", "bip39key")
-    cmd = [binary, "-u", userid] + flags
+    cmd = [binary, "-u", userid] + [str(flag) for flag in flags]
     return run_command(cmd, " ".join(bip39))
 
 
@@ -428,6 +428,28 @@ class Bip39KeyTest(unittest.TestCase):
                 ]
             )
             self.assertEqual(message, b"Secret message!!\n")
+
+    def test_custom_timestamps(self):
+        bip39 = "switch limit barely shoot ritual reveal bomb obey luxury around language build".split(
+            " "
+        )
+        password = "magic-password"
+        userid = "Integration Test <integration@test.com>"
+        # 2025-04-18T03:47:42.000Z
+        creation_time = 1744948062
+        # 2025-04-25T04:13:17.912Z
+        expiration_time = 1745554397
+        stdout, stderr = run_bip39key(
+            bip39,
+            userid,
+            ["-p", password, "-c", "-d", creation_time, "-y", expiration_time],
+        )
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.assertEqual(keys["pub"][4], "1744948062")
+            self.assertEqual(keys["pub"][5], "1745554397")
 
 
 if __name__ == "__main__":

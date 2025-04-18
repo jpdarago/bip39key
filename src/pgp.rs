@@ -145,7 +145,7 @@ fn output_user_id(user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
 fn public_subkey_payload(key: &EncryptKey) -> Result<Vec<u8>> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     cursor.write_all(&[0x04])?; // Version 4.
-    cursor.write_u32::<BigEndian>(key.created_timestamp_secs)?;
+    cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
     cursor.write_all(&[18])?; // Elliptic Curve Diffie-Hellmann.
     let oid: [u8; 10] = [0x2b, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01]; // Curve25519
     cursor.write_all(&[oid.len().try_into()?])?;
@@ -198,7 +198,7 @@ fn output_encrypted_secret_subkey(
 fn public_key_payload(key: &SignKey) -> Result<Vec<u8>> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     cursor.write_all(&[0x04])?; // Version 4.
-    cursor.write_u32::<BigEndian>(key.created_timestamp_secs)?;
+    cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
     cursor.write_all(&[22])?; // Algorithm, EdDSA
     let oid: [u8; 9] = [0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01]; // EdDSA OID
     cursor.write_all(&[oid.len().try_into()?])?;
@@ -261,7 +261,13 @@ fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) 
     // Signature creation time subpacket (2), 5 bytes.
     let mut subpacket_cursor = ByteCursor::new(Vec::with_capacity(256));
     subpacket_cursor.write_all(&[5, 2])?;
-    subpacket_cursor.write_u32::<BigEndian>(key.created_timestamp_secs)?;
+    subpacket_cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
+    if let Some(expiration_time_secs) = key.expiration_timestamp_secs {
+        subpacket_cursor.write_all(&[5, 9])?;
+        // Expirations are in seconds from the creation time.
+        let expiration_delta_secs = expiration_time_secs - key.creation_timestamp_secs;
+        subpacket_cursor.write_u32::<BigEndian>(expiration_delta_secs.try_into().unwrap())?;
+    }
     // Issuer subpacket (16), signature key id.
     let key_fp = key_fingerprint(key)?;
     subpacket_cursor.write_all(&[9, 16])?;
@@ -316,7 +322,14 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
     // Signature creation time subpacket (2), 5 bytes.
     let mut subpacket_cursor = ByteCursor::new(Vec::with_capacity(256));
     subpacket_cursor.write_all(&[5, 2])?;
-    subpacket_cursor.write_u32::<BigEndian>(key.created_timestamp_secs)?;
+    subpacket_cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
+    // Expiration time in seconds (3), if provided.
+    if let Some(expiration_time_secs) = subkey.expiration_timestamp_secs {
+        subpacket_cursor.write_all(&[5, 3])?;
+        // Expirations are in seconds from the creation time.
+        let expiration_delta_secs = expiration_time_secs - subkey.creation_timestamp_secs;
+        subpacket_cursor.write_u32::<BigEndian>(expiration_delta_secs.try_into().unwrap())?;
+    }
     // Issuer subpacket (16), signature key id.
     let key_fp = key_fingerprint(key)?;
     subpacket_cursor.write_all(&[9, 16])?;

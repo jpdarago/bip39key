@@ -7,6 +7,7 @@
     git
     gnupg
     openssh
+    pgpdump
     python314
     rust-analyzer
     rustc
@@ -14,6 +15,8 @@
   ];
 
   env.RUST_ANALYZER_LOCATION = "${pkgs.rust-analyzer}/bin/rust-analyzer";
+
+  env.RUST_BACKTRACE = "1";
 
   languages = {
     python.enable = true;
