@@ -209,7 +209,13 @@ fn validate(args: &Args) -> Result<()> {
         bail!("--timestamp (-t) flag is deprecated, use --creation-timestamp");
     }
     let creation_timestamp_secs = get_creation_timestamp_secs(args);
+    if creation_timestamp_secs < 0 {
+        bail!("--creation_timestamp_secs must be a positive number");
+    }
     if let Some(expiration_secs) = args.expiration_timestamp {
+        if expiration_secs < 0 {
+            bail!("--creation_timestamp_secs must be a positive number");
+        }
         if expiration_secs < creation_timestamp_secs {
             bail!(
                 "--expiration-timestamp is before creation timestamp: {} vs {}",
