@@ -451,6 +451,19 @@ class Bip39KeyTest(unittest.TestCase):
             self.assertEqual(keys["pub"][4], "1744948062")
             self.assertEqual(keys["pub"][5], "1745554397")
 
+    def test_authentication(self):
+        bip39 = "switch limit barely shoot ritual reveal bomb obey luxury around language build".split(
+            " "
+        )
+        password = "magic-password"
+        userid = "Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(bip39, userid, ["-p", password, "-c", "-b"])
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.assertTrue("a" in keys["pub"][6])
+
 
 if __name__ == "__main__":
     unittest.main()

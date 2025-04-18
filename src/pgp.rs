@@ -275,8 +275,14 @@ fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) 
     // Issuer fingerprint (33), version 4.
     subpacket_cursor.write_all(&[22, 33, 4])?;
     subpacket_cursor.write_all(&key_fp)?;
-    // Key Flags (27) subpacket (sign and certify).
-    subpacket_cursor.write_all(&[2, 27, 0x03])?;
+    // Key Flags (27) subpacket (sign and certify). If specified, we also include the authorization
+    // capability with 0x20.
+    let flags = if key.use_authorization_for_sign_key {
+        0x3 | 0x20
+    } else {
+        0x3
+    };
+    subpacket_cursor.write_all(&[2, 27, flags])?;
     // Features Subpacket (30): MDC
     subpacket_cursor.write_all(&[2, 30, 0x01])?;
     // Trust signature: 120 for complete trust.

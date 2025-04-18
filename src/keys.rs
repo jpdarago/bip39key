@@ -10,6 +10,7 @@ pub struct SignKey {
     pub signing_key: ed25519_dalek::SigningKey,
     pub creation_timestamp_secs: i64,
     pub expiration_timestamp_secs: Option<i64>,
+    pub use_authorization_for_sign_key: bool,
 }
 
 impl SignKey {
@@ -17,6 +18,7 @@ impl SignKey {
         secret_key_bytes: &[u8],
         creation_timestamp_secs: i64,
         expiration_timestamp_secs: Option<i64>,
+        use_authorization_for_sign_key: bool,
     ) -> Result<SignKey> {
         let mut input = [0u8; 32];
         input.copy_from_slice(secret_key_bytes);
@@ -24,6 +26,7 @@ impl SignKey {
         Ok(SignKey {
             creation_timestamp_secs,
             expiration_timestamp_secs,
+            use_authorization_for_sign_key,
             public_key: secret_key.verifying_key().to_bytes(),
             private_key: secret_key.to_bytes(),
             signing_key: secret_key,
@@ -97,6 +100,7 @@ impl Keys {
         expiration_timestamp_secs: Option<i64>,
         generate_encrypt_key: bool,
         pass: &Option<String>,
+        use_authorization_for_sign_key: bool,
     ) -> Result<Keys> {
         Ok(Keys {
             user_id: UserId {
@@ -106,6 +110,7 @@ impl Keys {
                 &secret_key_bytes[..32],
                 creation_timestamp_secs,
                 expiration_timestamp_secs,
+                use_authorization_for_sign_key,
             )?,
             encrypt_key: if generate_encrypt_key {
                 Some(EncryptKey::new(
@@ -128,6 +133,7 @@ impl Keys {
         expiration_timestamp_secs: Option<i64>,
         generate_encrypt_key: bool,
         use_rfc9106_settings: bool,
+        use_authorization_for_sign_key: bool,
     ) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let secret_key_bytes = if let Some(pass) = &passphrase {
@@ -144,6 +150,7 @@ impl Keys {
             expiration_timestamp_secs,
             generate_encrypt_key,
             passphrase,
+            use_authorization_for_sign_key,
         )
     }
 
@@ -155,6 +162,7 @@ impl Keys {
         expiration_timestamp_secs: Option<i64>,
         generate_encrypt_key: bool,
         use_rfc9106_settings: bool,
+        use_authorization_for_sign_key: bool,
     ) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
         let secret_key_bytes = if let Some(pass) = &passphrase {
@@ -176,6 +184,7 @@ impl Keys {
             expiration_timestamp_secs,
             generate_encrypt_key,
             passphrase,
+            use_authorization_for_sign_key,
         )
     }
 }

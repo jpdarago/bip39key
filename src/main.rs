@@ -94,6 +94,10 @@ struct Args {
     /// Use RFC 9106 settings for Argon2id.
     #[clap(short = 'r', long)]
     use_rfc9106_settings: bool,
+
+    /// Add authorization capability to the sign key.
+    #[clap(short = 'b', long)]
+    authorization_for_sign_key: bool,
 }
 
 fn write_keys<W: std::io::Write>(
@@ -261,6 +265,7 @@ fn main() -> Result<()> {
             expiration_timestamp_secs,
             /*generate_encrypt_key=*/ !args.just_signkey,
             args.use_rfc9106_settings,
+            args.authorization_for_sign_key,
         )
     } else {
         Keys::new_with_xor(
@@ -271,6 +276,7 @@ fn main() -> Result<()> {
             expiration_timestamp_secs,
             /*generate_encrypt_key=*/ !args.just_signkey,
             args.use_rfc9106_settings,
+            args.authorization_for_sign_key,
         )
     }
     .expect("Could not build keys");
