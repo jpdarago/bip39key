@@ -45,6 +45,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build with cross or cargo
+        shell: bash
         run: |
           BIN_NAME=bip39key
           if [[ "${{ matrix.static }}" == "true" ]]; then
@@ -54,12 +55,14 @@ jobs:
           fi
 
       - name: Import GPG key
+        shell: bash
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
       - name: Sign binary
+        shell: bash
         run: |
           BIN=target/${{ matrix.target }}/release/bip39key
           gpg --batch --yes --pinentry-mode loopback \
