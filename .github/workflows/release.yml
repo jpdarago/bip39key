@@ -3,7 +3,7 @@ name: Build & Sign Release Binaries
 on:
   push:
     tags:
-      - 'v*'  # Only trigger on version tags like v1.0.0
+      - 'v*'
 
 permissions:
   contents: write
@@ -17,18 +17,27 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             static: true
+            archive_ext: tar.gz
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             static: true
+            archive_ext: tar.gz
           - os: macos-latest
             target: x86_64-apple-darwin
             static: false
+            archive_ext: tar.gz
           - os: macos-latest
             target: aarch64-apple-darwin
             static: false
+            archive_ext: tar.gz
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             static: false
+            archive_ext: zip
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout code
@@ -39,46 +48,101 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross (Linux musl targets only)
+      - name: Install cross (for musl/static targets)
         if: matrix.static
         run: cargo install cross
 
-      - name: Install musl tools (optional fallback)
-        if: matrix.static && runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Build with cross or cargo
-        shell: bash
+      - name: Build binary
         run: |
           BIN_NAME=bip39key
+          TARGET=${{ matrix.target }}
           if [[ "${{ matrix.static }}" == "true" ]]; then
-            cross build --release --target=${{ matrix.target }}
+            cross build --release --target=$TARGET
           else
-            cargo build --release --target=${{ matrix.target }}
+            cargo build --release --target=$TARGET
           fi
 
+      - name: Rename and compress binary
+        run: |
+          BIN_NAME=bip39key
+          TARGET=${{ matrix.target }}
+          ARCHIVE_EXT=${{ matrix.archive_ext }}
+          mkdir -p dist
+          cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
+
+          if [[ "$ARCHIVE_EXT" == "zip" ]]; then
+            zip -j dist/${BIN_NAME}-$TARGET.zip dist/${BIN_NAME}-$TARGET
+          else
+            tar -czf dist/${BIN_NAME}-$TARGET.tar.gz -C dist ${BIN_NAME}-$TARGET
+          fi
+
+      - name: Generate SHA256 hash
+        run: |
+          TARGET=${{ matrix.target }}
+          ARCHIVE_EXT=${{ matrix.archive_ext }}
+          sha256sum dist/bip39key-$TARGET.$ARCHIVE_EXT >> dist/SHA256SUMS
+
       - name: Import GPG key
-        shell: bash
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
 
-      - name: Sign binary
-        shell: bash
+      - name: Sign archive
         run: |
-          BIN=target/${{ matrix.target }}/release/bip39key
+          TARGET=${{ matrix.target }}
+          ARCHIVE_EXT=${{ matrix.archive_ext }}
           gpg --batch --yes --pinentry-mode loopback \
               --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
-              --output "$BIN.sig" --detach-sign "$BIN"
+              --output dist/bip39key-$TARGET.$ARCHIVE_EXT.sig \
+              --detach-sign dist/bip39key-$TARGET.$ARCHIVE_EXT
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-      - name: Upload release assets
+      - name: Upload archive and signature
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            target/${{ matrix.target }}/release/bip39key
-            target/${{ matrix.target }}/release/bip39key.sig
+            dist/bip39key-${{ matrix.target }}.${{ matrix.archive_ext }}
+            dist/bip39key-${{ matrix.target }}.${{ matrix.archive_ext }}.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  finalize:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download dist from all jobs
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten dist contents
+        run: |
+          mkdir final
+          find dist -type f -name 'SHA256SUMS' -exec cat {} \; > final/SHA256SUMS
+
+      - name: Import GPG key
+        run: echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+
+      - name: Sign SHA256SUMS
+        run: |
+          cd final
+          gpg --batch --yes --pinentry-mode loopback \
+              --passphrase "${{ secrets.GPG_PASSPHRASE }}" \
+              --output SHA256SUMS.sig \
+              --detach-sign SHA256SUMS
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Upload SHA256SUMS and signature
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            final/SHA256SUMS
+            final/SHA256SUMS.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
