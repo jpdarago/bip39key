@@ -76,12 +76,6 @@ jobs:
             tar -czf dist/${BIN_NAME}-$TARGET.tar.gz -C dist ${BIN_NAME}-$TARGET
           fi
 
-      - name: Generate SHA256 hash
-        run: |
-          TARGET=${{ matrix.target }}
-          ARCHIVE_EXT=${{ matrix.archive_ext }}
-          sha256sum dist/bip39key-$TARGET.$ARCHIVE_EXT >> dist/SHA256SUMS
-
       - name: Import GPG key
         run: |
           echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
@@ -118,10 +112,12 @@ jobs:
         with:
           path: dist
 
-      - name: Flatten dist contents
+      - name: Flatten and generate SHA256SUMS
         run: |
-          mkdir final
-          find dist -type f -name 'SHA256SUMS' -exec cat {} \; > final/SHA256SUMS
+          mkdir -p final
+          find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} final/ \;
+          cd final
+          sha256sum * > SHA256SUMS
 
       - name: Import GPG key
         run: echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
