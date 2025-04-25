@@ -38,8 +38,10 @@ Options:
           Filename from which to read the mnemonic words
   -o, --output-filename <OUTPUT_FILENAME>
           Filename where to output the keys, if not present then write to stdout
-  -t, --timestamp <TIMESTAMP>
-          Timestamp (in seconds) for the dates. If unset, use the default 1231006505
+  -d, --creation-timestamp <CREATION_TIMESTAMP>
+          Creation timestamp (as unix timestamp in seconds). If unset, uses the genesis block (1231006505)
+  -y, --expiration-timestamp <EXPIRATION_TIMESTAMP>
+          Creation timestamp (as unix timestamp in seconds). If unset, the keys do not expire
   -j, --just-signkey
           Only output the sign key for PGP
   -f, --format <FORMAT>
@@ -58,6 +60,8 @@ Options:
           Use a hash of the concatenation of key and password instead of XOR of the hashes
   -q, --interactive
           Request seed phrase through an interactive CLI prompt
+  -r, --use-rfc9106-settings
+          Use RFC 9106 settings for Argon2id
   -h, --help
           Print help
   -V, --version
@@ -86,12 +90,12 @@ the User ID as the salt.
 
 Optionally, you can provide a passphrase. `bip39key` will then:
 
-1. If using the `--use-concatenate/-h` option, it will concatenate the seed
+1. If using the `--use-concatenate/-c` option, it will concatenate the seed
 with the passphrase, and then apply Argon2id to the result to produce the
 key.
 2. Apply Argon2id to the seed, then to the passphrase, and then XOR both buffers.
 
-> :warning:: You should prefer to use the `-h` option: with the XOR algorithm,
+> :warning:: You should prefer to use the `-c` option: with the XOR algorithm,
 > if the attacker gets your passphrase and output key, they can get the hashed seed
 > through an XOR and then attempt to brute force the input phrase. It is very hard
 > to do due to 128 bits of the input and the CPU intensive properties of Argon2id,
