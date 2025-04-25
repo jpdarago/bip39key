@@ -78,6 +78,7 @@ jobs:
             zip -j dist/${BIN_NAME}-$TARGET.zip dist/${BIN_NAME}-$TARGET
           else
             BIN_NAME=bip39key
+            cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
             tar -czf dist/${BIN_NAME}-$TARGET.tar.gz -C dist ${BIN_NAME}-$TARGET
           fi
 
