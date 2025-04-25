@@ -62,6 +62,10 @@ jobs:
             cargo build --release --target=$TARGET
           fi
 
+      - name: Install zip (Windows only)
+        if: runner.os == 'Windows'
+        run: choco install zip -y
+
       - name: Rename and compress binary
         run: |
           BIN_NAME=bip39key
