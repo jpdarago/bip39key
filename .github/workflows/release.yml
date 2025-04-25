@@ -68,15 +68,16 @@ jobs:
 
       - name: Rename and compress binary
         run: |
-          BIN_NAME=bip39key
           TARGET=${{ matrix.target }}
           ARCHIVE_EXT=${{ matrix.archive_ext }}
           mkdir -p dist
-          cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
 
           if [[ "$ARCHIVE_EXT" == "zip" ]]; then
+            BIN_NAME=bip39key.exe
+            cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
             zip -j dist/${BIN_NAME}-$TARGET.zip dist/${BIN_NAME}-$TARGET
           else
+            BIN_NAME=bip39key
             tar -czf dist/${BIN_NAME}-$TARGET.tar.gz -C dist ${BIN_NAME}-$TARGET
           fi
 
