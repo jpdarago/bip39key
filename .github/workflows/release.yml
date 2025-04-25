@@ -62,10 +62,6 @@ jobs:
             cargo build --release --target=$TARGET
           fi
 
-      - name: Install zip (Windows only)
-        if: runner.os == 'Windows'
-        run: choco install zip -y
-
       - name: Rename and compress binary
         run: |
           TARGET=${{ matrix.target }}
@@ -75,7 +71,7 @@ jobs:
           if [[ "$ARCHIVE_EXT" == "zip" ]]; then
             BIN_NAME=bip39key.exe
             cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
-            zip -j dist/${BIN_NAME}-$TARGET.zip dist/${BIN_NAME}-$TARGET
+            powershell -Command "Compress-Archive -Path dist\\${BIN_NAME}-$TARGET.exe -DestinationPath dist\\${BIN_NAME}-$TARGET.zip"
           else
             BIN_NAME=bip39key
             cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
