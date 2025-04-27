@@ -3,11 +3,13 @@ use crate::types::*;
 use anyhow::bail;
 use bip39::{Language, Mnemonic};
 use hmac::Mac;
-use inquire::Text;
+use inquire::validator::Validation;
+use inquire::{CustomUserError, Text};
 use lazy_static::lazy_static;
 use pbkdf2::password_hash::{PasswordHasher, SaltString};
 use std::fmt;
 use std::io::{self, BufRead, Write};
+use strsim::levenshtein;
 
 type HmacSha512 = hmac::Hmac<sha2::Sha512>;
 
@@ -50,7 +52,77 @@ fn is_valid_electrum_phrase(phrase: &str) -> bool {
     encoded[..2].eq("01") || encoded[..3].eq("100")
 }
 
+fn wordlist() -> Result<Vec<String>> {
+    let wordlist_filepath: std::path::PathBuf = [env!("CARGO_MANIFEST_DIR"), "resources/bip39.txt"]
+        .iter()
+        .collect();
+    let wordfile = std::fs::File::open(wordlist_filepath)?;
+    let mut words: Vec<String> = Vec::new();
+    for line in std::io::BufReader::new(wordfile).lines() {
+        words.push(line?.trim().to_string());
+    }
+    words.sort();
+    Ok(words)
+}
+
+lazy_static! {
+    static ref WORDLIST: Vec<String> = wordlist().expect("Failed to read wordlist");
+}
+
+fn suggest(
+    input: &str,
+) -> std::result::Result<
+    Vec<std::string::String>,
+    Box<(dyn std::error::Error + Send + Sync + 'static)>,
+> {
+    Ok(WORDLIST
+        .iter()
+        .filter(|s| s.to_lowercase().starts_with(input))
+        .map(String::from)
+        .collect())
+}
+
+fn check_word_is_valid(input: &str) -> Option<String> {
+    if WORDLIST
+        .binary_search_by(|s| s.as_str().cmp(input))
+        .is_err()
+    {
+        let closest = WORDLIST
+            .iter()
+            .min_by_key(|word| levenshtein(word, input))
+            .unwrap();
+        Some(closest.to_string())
+    } else {
+        None
+    }
+}
+
+fn validate(input: &str) -> std::result::Result<Validation, CustomUserError> {
+    if let Some(closest) = check_word_is_valid(input) {
+        Ok(Validation::Invalid(
+            format!(
+                "Word {} is not in the dictionary, maybe you meant {}?",
+                input, closest
+            )
+            .into(),
+        ))
+    } else {
+        Ok(Validation::Valid)
+    }
+}
+
 pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> {
+    for (i, word) in phrase.split(" ").enumerate() {
+        if let Some(closest) = check_word_is_valid(word) {
+            bail!(
+                "Word {} ({}) in the phrase is invalid, maybe you meant `{}`?",
+                i + 1,
+                word,
+                closest
+            );
+        }
+    }
+
     match seed_format {
         SeedFormat::Bip39 => {
             let mnemonic = Mnemonic::from_phrase(phrase, Language::English)?;
@@ -73,35 +145,6 @@ pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> 
     }
 }
 
-fn wordlist() -> Result<Vec<String>> {
-    let wordlist_filepath: std::path::PathBuf = [env!("CARGO_MANIFEST_DIR"), "resources/bip39.txt"]
-        .iter()
-        .collect();
-    let wordfile = std::fs::File::open(wordlist_filepath)?;
-    let mut words: Vec<String> = Vec::new();
-    for line in std::io::BufReader::new(wordfile).lines() {
-        words.push(line?.trim().to_string());
-    }
-    Ok(words)
-}
-
-lazy_static! {
-    static ref WORDLIST: Vec<String> = wordlist().expect("Failed to read wordlist");
-}
-
-fn suggest(
-    input: &str,
-) -> std::result::Result<
-    Vec<std::string::String>,
-    Box<(dyn std::error::Error + Send + Sync + 'static)>,
-> {
-    Ok(WORDLIST
-        .iter()
-        .filter(|s| s.to_lowercase().starts_with(input))
-        .map(String::from)
-        .collect())
-}
-
 pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
     println!("Please input a {} phrase: ", seed_format);
     io::stdout().flush().unwrap();
@@ -119,7 +162,8 @@ pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
                 break;
             }
             let input = Text::new(&format!("Word (currently {}): ", i + 1))
-                .with_autocomplete(&suggest)
+                .with_validator(validate)
+                .with_autocomplete(suggest)
                 .prompt()?;
             for word in input.split_whitespace() {
                 result.push(word.trim().to_string());
