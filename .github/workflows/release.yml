@@ -70,7 +70,7 @@ jobs:
 
           if [[ "$ARCHIVE_EXT" == "zip" ]]; then
             BIN_NAME=bip39key.exe
-            cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
+            cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET.exe
             powershell -Command "Compress-Archive -Path dist\\${BIN_NAME}-$TARGET.exe -DestinationPath dist\\${BIN_NAME}-$TARGET.zip"
           else
             BIN_NAME=bip39key
