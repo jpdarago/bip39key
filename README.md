@@ -62,6 +62,12 @@ Options:
           Request seed phrase through an interactive CLI prompt
   -r, --use-rfc9106-settings
           Use RFC 9106 settings for Argon2id
+  -b, --authorization-for-sign-key
+          Add authorization capability to the sign key
+  -n, --skip-passphrase-for-key-material
+          Do not add the passphrase as extra entropy. If set, the passphrase will only be 
+          used to encrypt the PGP or SSH key contents, and the key material itself will be 
+          generated from the seed and the user id
   -h, --help
           Print help
   -V, --version

@@ -464,6 +464,30 @@ class Bip39KeyTest(unittest.TestCase):
             keys = parse_gpg_keys(keysout)
             self.assertTrue("a" in keys["pub"][6])
 
+    def test_no_passphrase(self):
+        bip39 = "switch limit barely shoot ritual reveal bomb obey luxury around language build".split(
+            " "
+        )
+        password = "magic-password"
+        userid = "Integration Test <integration@test.com>"
+        stdout, stderr = run_bip39key(bip39, userid, ["-p", password, "-n"])
+        with GPG() as gpg:
+            self.run_gpg_import(gpg, key=stdout, password=password)
+            message, _ = gpg.run(
+                [
+                    "--passphrase",
+                    password,
+                    "--pinentry-mode",
+                    "loopback",
+                    "--decrypt",
+                    os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "message-no-passphrase.gpg",
+                    ),
+                ]
+            )
+            self.assertEqual(message, b"Secret message!\n")
+
 
 if __name__ == "__main__":
     unittest.main()
