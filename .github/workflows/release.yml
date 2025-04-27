@@ -64,16 +64,15 @@ jobs:
 
       - name: Rename and compress binary
         run: |
+          BIN_NAME=bip39key
           TARGET=${{ matrix.target }}
           ARCHIVE_EXT=${{ matrix.archive_ext }}
           mkdir -p dist
 
           if [[ "$ARCHIVE_EXT" == "zip" ]]; then
-            BIN_NAME=bip39key.exe
-            cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET.exe
+            cp target/$TARGET/release/$BIN_NAME.exe dist/${BIN_NAME}-$TARGET.exe
             powershell -Command "Compress-Archive -Path dist\\${BIN_NAME}-$TARGET.exe -DestinationPath dist\\${BIN_NAME}-$TARGET.zip"
           else
-            BIN_NAME=bip39key
             cp target/$TARGET/release/$BIN_NAME dist/${BIN_NAME}-$TARGET
             tar -czf dist/${BIN_NAME}-$TARGET.tar.gz -C dist ${BIN_NAME}-$TARGET
           fi
