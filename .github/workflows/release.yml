@@ -103,6 +103,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload build artifact for finalize step
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-${{ matrix.target }}
+          path: |
+            dist/bip39key*
+
   finalize:
     needs: build
     runs-on: ubuntu-latest
