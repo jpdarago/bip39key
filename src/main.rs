@@ -98,6 +98,12 @@ struct Args {
     /// Add authorization capability to the sign key.
     #[clap(short = 'b', long)]
     authorization_for_sign_key: bool,
+
+    /// Do not add the passphrase as extra entropy. If set, the passphrase will only be used to
+    /// encrypt the PGP or SSH key contents, and the key material itself will be generated from
+    /// the seed and the user id.
+    #[clap(short = 'n', long)]
+    skip_passphrase_for_key_material: bool,
 }
 
 fn write_keys<W: std::io::Write>(
@@ -259,7 +265,11 @@ fn main() -> Result<()> {
     let settings = KeySettings {
         user_id: args.user_id.clone(),
         seed,
-        passphrase: pass,
+        passphrase: if args.skip_passphrase_for_key_material {
+            None
+        } else {
+            pass
+        },
         creation_timestamp_secs,
         expiration_timestamp_secs,
         generate_encrypt_key: !args.just_signkey,
