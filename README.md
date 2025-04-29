@@ -15,8 +15,8 @@ It can generate either
 In all cases the tool requires a User ID in [RFC 2822](https://datatracker.ietf.org/doc/html/rfc2822) format.
 
 When providing a passphrase, the tool will use it to generate the key together
-with the seed from the BIP39 mnemonic, and will also encrypt the resulting OpenPGP/OpenSSH keys with
-the provided passphrase.
+with the seed from the BIP39 mnemonic and the user id, and will also encrypt the 
+resulting OpenPGP/OpenSSH keys with  the provided passphrase.
 
 The creation timestamp for the OpenPGP keys is set to the Bitcoin genesis block
 timestamp (1231006505 in seconds from Unix epoch). GPG considers this part of
@@ -101,6 +101,10 @@ with the passphrase, and then apply Argon2id to the result to produce the
 key.
 2. Apply Argon2id to the seed, then to the passphrase, and then XOR both buffers.
 
+The passphrase is also used to encrypt the OpenPGP and SSH files themselves. If
+you want to keep that encryption but not use the passphrase as additional entropy,
+then pass the `--skip-passphrase-for-key-material/-n` option.
+
 > :warning:: You should prefer to use the `-c` option: with the XOR algorithm,
 > if the attacker gets your passphrase and output key, they can get the hashed seed
 > through an XOR and then attempt to brute force the input phrase. It is very hard
@@ -110,13 +114,8 @@ key.
 
 ## Running tests.
 
-Ensure that `gpg` and `ssh-keygen` are installed.
-
-You can then use [`pipenv`](https://pipenv.pypa.io/en/latest/) to run the tests.
-
-```sh
-$ pipenv run ./test/test.py
-```
+This project uses the https://nixos.org/ package manager with https://devenv.sh, 
+once you install those you can run the tests with `devenv test`.
 
 ## Acknowledgements
 
