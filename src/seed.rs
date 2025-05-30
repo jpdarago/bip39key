@@ -52,15 +52,18 @@ fn is_valid_electrum_phrase(phrase: &str) -> bool {
     encoded[..2].eq("01") || encoded[..3].eq("100")
 }
 
-fn wordlist() -> Result<Vec<String>> {
-    let wordlist_filepath: std::path::PathBuf = [env!("CARGO_MANIFEST_DIR"), "resources/bip39.txt"]
-        .iter()
-        .collect();
-    let wordfile = std::fs::File::open(wordlist_filepath)?;
+fn wordlist() -> std::io::Result<Vec<String>> {
+    // Read the environment variable at runtime and convert error to io::Error
+    let wordlist_path = std::env::var("WORDLIST_BIP39")
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e))?;
+
+    let wordfile = std::fs::File::open(wordlist_path)?;
     let mut words: Vec<String> = Vec::new();
+
     for line in std::io::BufReader::new(wordfile).lines() {
         words.push(line?.trim().to_string());
     }
+
     words.sort();
     Ok(words)
 }
