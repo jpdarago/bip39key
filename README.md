@@ -89,6 +89,14 @@ of entropy is provided. A passphrase's entropy depends on the algorithm used
 to generate the passphrase, and the passphrase length. Too short a passphrase
 can make the resulting key weak.
 
+## Wordlist source
+
+The binary bundles the BIP39 english wordlist, available in the repo in [resources/bip39.txt](`https://github.com/jpdarago/bip39key/blob/main/resources/bip39.txt`).
+
+If you want to override the wordlist, you can use the env var `WORDLIST_BIP39`.
+
+IMPORTANT: It must be in the same format as the one above (one word per line).
+
 ## Entropy source
 
 The BIP39 seed is expanded from 128/256 bits to 512 bits using Argon2id, with
