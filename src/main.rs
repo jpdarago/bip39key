@@ -57,6 +57,14 @@ struct Args {
     #[clap(short, long)]
     just_signkey: bool,
 
+    /// Generate a separate signing subkey.
+    #[clap(short = 'g', long)]
+    generate_sign_subkey: bool,
+
+    /// Generate an authentication subkey.
+    #[clap(short = 'h', long)]
+    generate_auth_key: bool,
+
     /// Output format: SSH or PGP.
     #[clap(short, long, default_value = "pgp")]
     format: OutputFormat,
@@ -237,6 +245,14 @@ fn validate(args: &Args) -> Result<()> {
     if args.just_signkey && args.format == OutputFormat::Ssh {
         bail!("Subkey option (--subkey/-s) only works with PGP output format.");
     }
+    
+    if args.just_signkey && (args.generate_sign_subkey || args.generate_auth_key) {
+        bail!("Cannot use --just-signkey with --generate-sign-subkey or --generate-auth-key");
+    }
+
+    if args.format == OutputFormat::Ssh && (args.generate_sign_subkey || args.generate_auth_key) {
+        bail!("Signature and authentication subkeys are only supported with PGP output format");
+    }
     if args.armor && args.format == OutputFormat::Ssh {
         bail!("Armor option (--armor/-a) only works with PGP output format.");
     }
@@ -273,6 +289,8 @@ fn main() -> Result<()> {
         creation_timestamp_secs,
         expiration_timestamp_secs,
         generate_encrypt_key: !args.just_signkey,
+        generate_sign_subkey: args.generate_sign_subkey,
+        generate_auth_key: args.generate_auth_key,
         use_rfc9106_settings: args.use_rfc9106_settings,
         use_authorization_for_sign_key: args.authorization_for_sign_key,
     };
