@@ -1,5 +1,6 @@
 use crate::types::*;
 use byteorder::{BigEndian, WriteBytesExt};
+use std::io::Write;
 
 pub struct UserId {
     pub user_id: String,
@@ -168,7 +169,7 @@ pub struct Keys {
 fn run_argon(bytes: &[u8], user_id: &str, use_rfc9106_settings: bool, hash_length: usize) -> Result<Vec<u8>> {
     let config = if use_rfc9106_settings {
         let mut result = argon2::Config::rfc9106();
-        result.hash_length = hash_length;
+        result.hash_length = hash_length as u32;
         result
     } else {
         argon2::Config {
@@ -179,7 +180,7 @@ fn run_argon(bytes: &[u8], user_id: &str, use_rfc9106_settings: bool, hash_lengt
             lanes: 8,
             secret: &[],
             ad: &[],
-            hash_length,
+            hash_length: hash_length as u32,
         }
     };
     Ok(argon2::hash_raw(bytes, user_id.as_bytes(), &config)?)
