@@ -52,14 +52,22 @@ fn is_valid_electrum_phrase(phrase: &str) -> bool {
     encoded[..2].eq("01") || encoded[..3].eq("100")
 }
 
+const DEFAULT_ENGLISH_WORDLIST: &str = include_str!("../resources/bip39.txt");
+
 fn wordlist() -> Result<Vec<String>> {
-    let wordlist_filepath: std::path::PathBuf = [env!("CARGO_MANIFEST_DIR"), "resources/bip39.txt"]
-        .iter()
-        .collect();
-    let wordfile = std::fs::File::open(wordlist_filepath)?;
     let mut words: Vec<String> = Vec::new();
-    for line in std::io::BufReader::new(wordfile).lines() {
-        words.push(line?.trim().to_string());
+    match std::env::var("WORDLIST_BIP39") {
+        Ok(path) => {
+            let wordfile = std::fs::File::open(path)?;
+            for line in std::io::BufReader::new(wordfile).lines() {
+                words.push(line?.trim().to_string());
+            }
+        }
+        Err(_) => {
+            for line in DEFAULT_ENGLISH_WORDLIST.lines() {
+                words.push(line.trim().to_string());
+            }
+        }
     }
     words.sort();
     Ok(words)
