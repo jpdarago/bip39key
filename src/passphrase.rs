@@ -2,7 +2,7 @@ use anyhow::Context;
 
 use crate::types::*;
 use inquire::{Confirm, Password};
-use std::io::{BufRead, BufReader, Error, ErrorKind, Write};
+use std::io::{BufRead, BufReader, Error, Write};
 use std::process::{Command, Stdio};
 
 pub fn from_pinentry() -> Result<String> {
@@ -15,10 +15,10 @@ pub fn from_pinentry() -> Result<String> {
         .with_context(|| format!("Could not find executable {}, try using -p/--passphrase or use BIP39_PINENTRY env var to set the path.", pinentry_executable))?;
     let stdout = pinentry
         .stdout
-        .ok_or_else(|| Error::new(ErrorKind::Other, "Could not capture standard output"))?;
+        .ok_or_else(|| Error::other("Could not capture standard output"))?;
     let mut stdin = pinentry
         .stdin
-        .ok_or_else(|| Error::new(ErrorKind::Other, "Could not pipe to pinentry"))?;
+        .ok_or_else(|| Error::other("Could not pipe to pinentry"))?;
     let mut reader = BufReader::new(stdout);
     let input = &[
         "SETREPEAT",
