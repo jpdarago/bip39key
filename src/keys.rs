@@ -1,4 +1,5 @@
 use crate::types::*;
+use byteorder::{BigEndian, WriteBytesExt};
 
 pub struct UserId {
     pub user_id: String,
@@ -51,7 +52,7 @@ pub struct AuthKey {
 }
 
 // Add functions for SignSubkey public key payload
-fn public_sign_subkey_payload(key: &SignSubkey) -> Result<Vec<u8>> {
+pub fn public_sign_subkey_payload(key: &SignSubkey) -> Result<Vec<u8>> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     cursor.write_all(&[0x04])?; // Version 4.
     cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
@@ -68,7 +69,7 @@ fn public_sign_subkey_payload(key: &SignSubkey) -> Result<Vec<u8>> {
 }
 
 // Add functions for AuthKey public key payload
-fn public_auth_key_payload(key: &AuthKey) -> Result<Vec<u8>> {
+pub fn public_auth_key_payload(key: &AuthKey) -> Result<Vec<u8>> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     cursor.write_all(&[0x04])?; // Version 4.
     cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;

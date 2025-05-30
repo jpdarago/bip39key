@@ -1,4 +1,4 @@
-use crate::keys::*;
+use crate::keys::{*, public_sign_subkey_payload, public_auth_key_payload};
 use crate::types::*;
 
 use aes::cipher::{AsyncStreamCipher, KeyIvInit};
