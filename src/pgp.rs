@@ -200,7 +200,7 @@ fn output_unencrypted_secret_sign_subkey(key: &SignSubkey, out: &mut ByteCursor)
     let mpi_key = mpi_encode(&key.private_key);
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
-    output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
+    output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
 fn output_unencrypted_secret_auth_key(key: &AuthKey, out: &mut ByteCursor) -> Result<()> {
@@ -212,7 +212,7 @@ fn output_unencrypted_secret_auth_key(key: &AuthKey, out: &mut ByteCursor) -> Re
     let mpi_key = mpi_encode(&key.private_key);
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
-    output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
+    output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
 fn output_encrypted_secret_subkey(
@@ -241,7 +241,7 @@ fn output_encrypted_secret_sign_subkey(
     let payload = public_sign_subkey_payload(key)?;
     cursor.write_all(&payload)?;
     s2k_encrypt(&key.private_key, passphrase, &mut cursor)?;
-    output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
+    output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
 fn output_encrypted_secret_auth_key(
@@ -253,7 +253,7 @@ fn output_encrypted_secret_auth_key(
     let payload = public_auth_key_payload(key)?;
     cursor.write_all(&payload)?;
     s2k_encrypt(&key.private_key, passphrase, &mut cursor)?;
-    output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
+    output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
 fn public_key_payload(key: &SignKey) -> Result<Vec<u8>> {
