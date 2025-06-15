@@ -91,7 +91,7 @@ struct Args {
 
     /// DEPRECATED! Request seed phrase through an interactive CLI prompt.
     #[clap(short = 'q', long)]
-    interactive: bool,
+    interactive: Option<bool>,
 
     /// Use RFC 9106 settings for Argon2id.
     #[clap(short = 'r', long)]
@@ -190,10 +190,12 @@ fn output_keys_to_stdout(args: &Args, keys: &Keys) -> Result<()> {
 }
 
 fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
-    let filename = if args.interactive {
+    let filename = if args.output_filename.is_some() {
+        args.output_filename.as_ref().map(|f| f.to_string())
+    } else if console::is_input_interactive() {
         Some(Text::new("Provide an output filename for the key (empty for stdout): ").prompt()?)
     } else {
-        args.output_filename.as_ref().map(|f| f.to_string())
+        None
     };
     if let Some(f) = filename {
         if f.is_empty() {
@@ -222,6 +224,9 @@ fn get_creation_timestamp_secs(args: &Args) -> i64 {
 }
 
 fn validate(args: &Args) -> Result<()> {
+    if args.interactive.is_some() {
+        console_logln!("WARNING: -q/--interactive flag is deprecated. You probably want an earlier BIP39 version.");
+    }
     if args.creation_timestamp.is_some() && args.timestamp.is_some() {
         bail!("--timestamp (-t) flag is deprecated, use --creation-timestamp");
     }
@@ -249,15 +254,6 @@ fn validate(args: &Args) -> Result<()> {
     }
     if args.passphrase.is_some() && args.pinentry {
         bail!("One of --passphrase/--pinentry must be set at a time.");
-    }
-    if args.interactive && args.pinentry {
-        bail!("One of --interactive/--pinentry must be set at a time.");
-    }
-    if args.interactive && args.passphrase.is_some() {
-        bail!("One of --interactive/--passphrase must be set at a time.");
-    }
-    if args.interactive && args.input_filename.is_some() {
-        bail!("One of --interactive/--input_file must be set at a time.");
     }
     Ok(())
 }
