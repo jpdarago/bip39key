@@ -145,7 +145,6 @@ fn get_passphrase(args: &Args) -> Result<Option<String>> {
     } else if let Some(pass) = &args.passphrase {
         Ok(Some(pass.clone()))
     } else if console::is_input_interactive() {
-        console_log!("Please input your passphrase. Press enter for no passphrase: ");
         let passphrase = passphrase::from_interactive_prompt()?;
         if passphrase.is_empty() {
             Ok(None)
@@ -282,6 +281,7 @@ fn main() -> Result<()> {
         use_rfc9106_settings: args.use_rfc9106_settings,
         use_authorization_for_sign_key: args.authorization_for_sign_key,
     };
+    console_logln!("Generating key entropy");
     let keys = if args.use_concatenation {
         Keys::new_with_concat(settings)
     } else {
@@ -289,5 +289,6 @@ fn main() -> Result<()> {
         Keys::new_with_xor(settings)
     }
     .expect("Could not build keys");
+    console_logln!("Done generating key entropy");
     output_keys(&args, &keys)
 }
