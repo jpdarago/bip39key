@@ -1,3 +1,5 @@
+#[macro_use]
+mod console;
 mod keys;
 mod passphrase;
 mod pgp;
@@ -87,7 +89,7 @@ struct Args {
     #[clap(short = 'c', long)]
     use_concatenation: bool,
 
-    /// Request seed phrase through an interactive CLI prompt.
+    /// DEPRECATED! Request seed phrase through an interactive CLI prompt.
     #[clap(short = 'q', long)]
     interactive: bool,
 
@@ -138,20 +140,25 @@ fn write_keys<W: std::io::Write>(
 }
 
 fn get_passphrase(args: &Args) -> Result<Option<String>> {
-    if args.interactive {
-        let passphrase = passphrase::from_interactive_prompt()?;
-        Ok(Some(passphrase))
-    } else if args.pinentry {
+    if args.pinentry {
         Ok(Some(passphrase::from_pinentry()?))
     } else if let Some(pass) = &args.passphrase {
         Ok(Some(pass.clone()))
+    } else if console::is_input_interactive() {
+        console_log!("Please input your passphrase. Press enter for no passphrase: ");
+        let passphrase = passphrase::from_interactive_prompt()?;
+        if passphrase.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(passphrase))
+        }
     } else {
         Ok(None)
     }
 }
 
 fn get_seed(args: &Args) -> Result<Vec<u8>> {
-    if args.interactive {
+    if console::is_input_interactive() {
         return seed::from_prompt(&args.seed_format);
     }
     let mut phrase = String::new();
@@ -256,8 +263,11 @@ fn validate(args: &Args) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    console_logln!("Welcome to BIP39Key");
+
     let args = Args::parse();
     validate(&args)?;
+
     let creation_timestamp_secs = get_creation_timestamp_secs(&args);
     let expiration_timestamp_secs = args.expiration_timestamp;
     let seed = get_seed(&args)?;
@@ -279,6 +289,7 @@ fn main() -> Result<()> {
     let keys = if args.use_concatenation {
         Keys::new_with_concat(settings)
     } else {
+        console_logln!("WARNING: Using deprecated xor method, if making a new key prefer to use concatenation method with -c"); 
         Keys::new_with_xor(settings)
     }
     .expect("Could not build keys");

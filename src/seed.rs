@@ -154,8 +154,7 @@ pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> 
 }
 
 pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
-    println!("Please input a {} phrase: ", seed_format);
-    io::stdout().flush().unwrap();
+    console_logln!("Please input a seed phrase in {} format.", seed_format);
     loop {
         let mut result = vec![];
         let mut i = 0;
