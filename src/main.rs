@@ -267,6 +267,9 @@ fn main() -> Result<()> {
     let expiration_timestamp_secs = args.expiration_timestamp;
     let seed = get_seed(&args)?;
     let pass = get_passphrase(&args)?;
+    if pass.is_none() {
+        console_logln!("WARNING: Using no passphrase");
+    }
     let settings = KeySettings {
         user_id: args.user_id.clone(),
         seed,
