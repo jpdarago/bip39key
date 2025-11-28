@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "bip39key"
-version = "1.4.2"
+version = "1.4.4"
 dependencies = [
  "aes",
  "anyhow",

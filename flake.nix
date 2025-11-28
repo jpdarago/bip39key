@@ -1,7 +1,7 @@
 {
   description = "Nix flake for bip39key";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.05";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
 
   outputs = { self, nixpkgs }:
   let
@@ -16,16 +16,11 @@
     packages = forAllSystems ({ pkgs, system }: {
       bip39key = pkgs.rustPlatform.buildRustPackage rec {
         pname = "bip39key";
-        version = "1.4.3";
+        version = "1.4.4";
 
-        src = pkgs.fetchFromGitHub {
-          owner = "jpdarago";
-          repo  = "bip39key";
-          rev   = "v${version}";
-          hash  = "sha256-U28settSyuTvrgx+pWeOBjer0Zi9CVjL/KjW7FhHmJ4=";
-        };
+        src = ./.;
 
-        cargoHash = "sha256-w7U4I/Yzy/OGoWZQ9dpKi3zl2R3sOZP9vv71gFsEpcQ=";
+        cargoLock.lockFile = ./Cargo.lock;
 
         doCheck = true;
 
