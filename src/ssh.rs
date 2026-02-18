@@ -32,6 +32,7 @@ fn put_public_key(keys: &Keys, cursor: &mut ByteCursor) -> Result<()> {
     Ok(())
 }
 
+#[allow(unknown_lints, clippy::manual_is_multiple_of)]
 fn pad(padding: usize, content: &mut Vec<u8>) {
     for i in 1..padding {
         if content.len() % padding == 0 {

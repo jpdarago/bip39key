@@ -79,10 +79,8 @@ lazy_static! {
 
 fn suggest(
     input: &str,
-) -> std::result::Result<
-    Vec<std::string::String>,
-    Box<(dyn std::error::Error + Send + Sync + 'static)>,
-> {
+) -> std::result::Result<Vec<std::string::String>, Box<dyn std::error::Error + Send + Sync + 'static>>
+{
     Ok(WORDLIST
         .iter()
         .filter(|s| s.to_lowercase().starts_with(input))
