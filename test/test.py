@@ -42,6 +42,9 @@ class GPG:
     def __enter__(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         change_permissions(self.tmpdir.name, 0x1C0)
+        # GPG 2.4.9+ requires this for --pinentry-mode loopback to work.
+        with open(os.path.join(self.tmpdir.name, "gpg-agent.conf"), "w") as f:
+            f.write("allow-loopback-pinentry\n")
         return self
 
     def __exit__(self, type, value, traceback):
