@@ -42,10 +42,19 @@ class GPG:
     def __enter__(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         change_permissions(self.tmpdir.name, 0x1C0)
+        # Configure gpg-agent to allow loopback pinentry so passphrases
+        # can be passed directly via --passphrase/--passphrase-file flags
+        # without ever prompting. The agent auto-starts as needed.
+        with open(os.path.join(self.tmpdir.name, "gpg-agent.conf"), "w") as f:
+            f.write("allow-loopback-pinentry\n")
         return self
 
-    def __exit__(self, type, value, traceback):
-        shutil.rmtree(self.tmpdir.name)
+    def __exit__(self, _type, _value, _traceback):
+        subprocess.run(
+            ["gpgconf", "--kill", "gpg-agent"],
+            env=dict(os.environ, GNUPGHOME=self.tmpdir.name),
+            capture_output=True,
+        )
         self.tmpdir.cleanup()
 
     def run(self, flags, stdin=None):
@@ -56,6 +65,8 @@ class GPG:
             "-utf8-strings",
             "--batch",
             "--yes",
+            "--pinentry-mode",
+            "loopback",
             "--homedir",
             self.tmpdir.name,
         ] + flags
@@ -142,11 +153,6 @@ class Bip39KeyTest(unittest.TestCase):
     def setUpClass(cls):
         check_binary("gpg", "Please install GNU Privacy Guard.")
         check_binary("ssh-keygen", "Please install OpenSSH.")
-        subprocess.run(["gpgconf", "--kill", "gpg-agent"], check=True)
-        try:
-            subprocess.run(["gpg-agent", "--daemon", "--verbose"], check=True)
-        except subprocess.CalledProcessError as e:
-            pass
         print("Running cargo...", end="", flush=True)
         run_command(["cargo", "build", "--release"])
         print("Done. Running tests.")
@@ -267,18 +273,19 @@ class Bip39KeyTest(unittest.TestCase):
     def test_gpg_import_with_passphrase_fails(self):
         stdout, stderr = run_bip39key(BIP39, USERID, ["-p", PASS])
         with GPG() as gpg:
-            keyfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
+            keyfile = os.path.join(gpg.tmpdir.name, "key.gpg")
             with open(keyfile, "wb") as f:
                 f.write(stdout)
             with self.assertRaises(Exception):
-                flags.append("--no-batch")
-                flags.append("--pinentry-mode")
-                flags.append("loopback")
-                flags.append("--passphrase")
-                flags.append("badpassword")
-                flags = ["--import"]
-                flags.append(keyfile)
-                gpg.run(flags, key)
+                flags = [
+                    "--import",
+                    keyfile,
+                    "--passphrase",
+                    "badpassword",
+                    "--pinentry-mode",
+                    "loopback",
+                ]
+                gpg.run(flags)
             os.remove(keyfile)
 
     def test_ssh_with_passphrase(self):
