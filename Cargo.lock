@@ -127,7 +127,6 @@ dependencies = [
  "hkdf",
  "hmac",
  "inquire",
- "lazy_static",
  "pbkdf2 0.12.2",
  "rand",
  "rust-argon2",
