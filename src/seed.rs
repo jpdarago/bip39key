@@ -167,7 +167,8 @@ pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
             if i == 12 {
                 break;
             }
-            let input = Text::new(&format!("Word (currently {}): ", i + 1))
+            let word_start = i + 1;
+            let input = Text::new(&format!("Word (currently {}): ", word_start))
                 .with_validator(validate)
                 .with_autocomplete(suggest)
                 .prompt()?;
@@ -175,6 +176,16 @@ pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
                 result.push(word.trim().to_string());
                 i += 1;
             }
+            // Overwrite the answered prompt line so previously entered words
+            // are not readable in terminal scrollback or screen captures.
+            // Move cursor up one line, clear it, and print a masked replacement.
+            print!("\x1b[1A\x1b[2KWord {}: ****", word_start);
+            if i > word_start {
+                // Multiple words were pasted at once.
+                print!(" ({} words entered)", i - word_start + 1);
+            }
+            println!();
+            io::stdout().flush().unwrap();
         }
         if result.is_empty() {
             continue;
