@@ -29,6 +29,18 @@ jobs:
         with:
           command: check
 
+  version-check:
+    name: Version Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Check version consistency
+        run: ./scripts/check-version.sh
+
   lints:
     name: Lints
     runs-on: ubuntu-latest
