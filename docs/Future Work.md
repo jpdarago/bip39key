@@ -560,8 +560,8 @@ Roughly ordered by impact-to-effort ratio, grouped into phases:
 **Phase 1 — Low-hanging fruit (hours each):**
 1. Add `zeroize` as a direct dependency, apply `ZeroizeOnDrop` to key structs, wrap intermediates in `Zeroizing<Vec<u8>>`. (Section 3.1.1)
 2. Add `prctl(PR_SET_DUMPABLE, 0)` at process start. One line. (Section 3.1.2)
-3. Bump `Cargo.toml` version to match the latest tag. (Section 6.2)
-4. Add `cargo audit` to CI. (Section 5.2)
+3. ~~Bump `Cargo.toml` version to match the latest tag. (Section 6.2)~~
+4. ~~Add `cargo audit` to CI. (Section 5.2)~~
 5. Always print fingerprint to stderr after key generation. (Section 4.4)
 6. Fix seed input echo — use non-echoing prompt for seed words. (Section 3.3.4)
 
