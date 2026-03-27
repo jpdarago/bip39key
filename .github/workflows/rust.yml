@@ -56,6 +56,19 @@ jobs:
           command: clippy
           args: -- -D warnings
 
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run cargo audit
+        run: cargo audit
+
   tests:
     strategy:
       matrix:
