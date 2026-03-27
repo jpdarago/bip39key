@@ -55,9 +55,9 @@ Options:
   -s, --seed-format <SEED_FORMAT>
           Seed Format: BIP39, Electrum [default: bip39] [possible values: bip39, electrum]
   -g, --algorithm <ALGORITHM>
-          Key derivation algorithm: xor (deprecated), concat (deprecated), hkdf (recommended).
-          Use xor or concat only to regenerate keys created with older versions.
-          [default: hkdf] [possible values: xor, concat, hkdf]
+          Key derivation algorithm: xor (legacy default), concat, hkdf (recommended for new keys).
+          Use --algorithm hkdf for new keys. Defaults to xor for backward compatibility.
+          [default: xor] [possible values: xor, concat, hkdf]
   -r, --use-rfc9106-settings
           Use RFC 9106 settings for Argon2id
   -b, --authorization-for-sign-key

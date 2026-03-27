@@ -89,9 +89,9 @@ struct Args {
     #[clap(short = 'c', long, hide = true)]
     use_concatenation: bool,
 
-    /// Key derivation algorithm: xor (deprecated), concat (deprecated), hkdf (recommended).
-    /// Use xor or concat only to regenerate keys created with older versions.
-    #[clap(short = 'g', long, default_value = "hkdf")]
+    /// Key derivation algorithm: xor (legacy default), concat, hkdf (recommended for new keys).
+    /// Use --algorithm hkdf for new keys. Defaults to xor for backward compatibility.
+    #[clap(short = 'g', long, default_value = "xor")]
     algorithm: keys::KeyAlgorithm,
 
     /// DEPRECATED! Request seed phrase through an interactive CLI prompt.
@@ -259,7 +259,7 @@ fn validate(args: &Args) -> Result<()> {
     if args.passphrase.is_some() && args.pinentry {
         bail!("One of --passphrase/--pinentry must be set at a time.");
     }
-    if args.use_concatenation && args.algorithm != keys::KeyAlgorithm::Hkdf {
+    if args.use_concatenation && args.algorithm != keys::KeyAlgorithm::Xor {
         bail!("-c/--use-concatenation cannot be combined with --algorithm. Use --algorithm alone.");
     }
     Ok(())
