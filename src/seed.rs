@@ -5,10 +5,10 @@ use bip39::{Language, Mnemonic};
 use hmac::Mac;
 use inquire::validator::Validation;
 use inquire::{CustomUserError, Text};
-use lazy_static::lazy_static;
 use pbkdf2::password_hash::{PasswordHasher, SaltString};
 use std::fmt;
 use std::io::{self, BufRead, Write};
+use std::sync::OnceLock;
 use strsim::levenshtein;
 
 type HmacSha512 = hmac::Hmac<sha2::Sha512>;
@@ -73,15 +73,16 @@ fn wordlist() -> Result<Vec<String>> {
     Ok(words)
 }
 
-lazy_static! {
-    static ref WORDLIST: Vec<String> = wordlist().expect("Failed to read wordlist");
+fn get_wordlist() -> &'static Vec<String> {
+    static WORDLIST: OnceLock<Vec<String>> = OnceLock::new();
+    WORDLIST.get_or_init(|| wordlist().expect("Failed to read wordlist"))
 }
 
 fn suggest(
     input: &str,
 ) -> std::result::Result<Vec<std::string::String>, Box<dyn std::error::Error + Send + Sync + 'static>>
 {
-    Ok(WORDLIST
+    Ok(get_wordlist()
         .iter()
         .filter(|s| s.to_lowercase().starts_with(input))
         .map(String::from)
@@ -89,11 +90,11 @@ fn suggest(
 }
 
 fn check_word_is_valid(input: &str) -> Option<String> {
-    if WORDLIST
+    if get_wordlist()
         .binary_search_by(|s| s.as_str().cmp(input))
         .is_err()
     {
-        let closest = WORDLIST
+        let closest = get_wordlist()
             .iter()
             .min_by_key(|word| levenshtein(word, input))
             .unwrap();
