@@ -26,8 +26,6 @@ GPG).
 
 ## Usage
 
-> :warning: New users of `bip39key` should use `-c` option.
-
 ```
 Usage: bip39key [OPTIONS] --user-id <USER_ID>
 
@@ -56,17 +54,17 @@ Options:
           Request passphrase with pinentry. See README.md for details
   -s, --seed-format <SEED_FORMAT>
           Seed Format: BIP39, Electrum [default: bip39] [possible values: bip39, electrum]
-  -c, --use-concatenation
-          Use a hash of the concatenation of key and password instead of XOR of the hashes
-  -q, --interactive
-          Request seed phrase through an interactive CLI prompt
+  -g, --algorithm <ALGORITHM>
+          Key derivation algorithm: xor (deprecated), concat (deprecated), hkdf (recommended).
+          Use xor or concat only to regenerate keys created with older versions.
+          [default: hkdf] [possible values: xor, concat, hkdf]
   -r, --use-rfc9106-settings
           Use RFC 9106 settings for Argon2id
   -b, --authorization-for-sign-key
           Add authorization capability to the sign key
   -n, --skip-passphrase-for-key-material
-          Do not add the passphrase as extra entropy. If set, the passphrase will only be 
-          used to encrypt the PGP or SSH key contents, and the key material itself will be 
+          Do not add the passphrase as extra entropy. If set, the passphrase will only be
+          used to encrypt the PGP or SSH key contents, and the key material itself will be
           generated from the seed and the user id
   -h, --help
           Print help
@@ -102,23 +100,30 @@ IMPORTANT: It must be in the same format as the one above (one word per line).
 The BIP39 seed is expanded from 128/256 bits to 512 bits using Argon2id, with
 the User ID as the salt.
 
-Optionally, you can provide a passphrase. `bip39key` will then:
+Optionally, you can provide a passphrase. The `--algorithm` flag controls how
+the seed and passphrase are combined:
 
-1. If using the `--use-concatenate/-c` option, it will concatenate the seed
-with the passphrase, and then apply Argon2id to the result to produce the
-key.
-2. Apply Argon2id to the seed, then to the passphrase, and then XOR both buffers.
+* **`hkdf`** (default, recommended) — Concatenates the seed and passphrase,
+  applies Argon2id, then uses HKDF-Expand (RFC 5869) with distinct info strings
+  (`bip39key-sign-v1` and `bip39key-encrypt-v1`) to derive independent sign and
+  encrypt keys. This provides proper domain separation between key types.
+* **`concat`** (deprecated) — Concatenates the seed and passphrase, applies
+  Argon2id, and splits the output at a fixed offset into sign and encrypt keys.
+* **`xor`** (deprecated) — Applies Argon2id separately to the seed and
+  passphrase, then XORs the results.
+
+Use `--algorithm xor` or `--algorithm concat` only to regenerate keys that were
+created with older versions of `bip39key`.
 
 The passphrase is also used to encrypt the OpenPGP and SSH files themselves. If
 you want to keep that encryption but not use the passphrase as additional entropy,
 then pass the `--skip-passphrase-for-key-material/-n` option.
 
-> :warning:: You should prefer to use the `-c` option: with the XOR algorithm,
-> if the attacker gets your passphrase and output key, they can get the hashed seed
-> through an XOR and then attempt to brute force the input phrase. It is very hard
-> to do due to 128 bits of the input and the CPU intensive properties of Argon2id,
-> but concatenating both is better since the input phrase is no longer in any well
-> known format that could have been precomputed.
+> :warning: The `xor` algorithm has a weakness: if an attacker obtains your
+> passphrase and output key, they can recover the hashed seed via XOR and
+> attempt to brute force the input phrase. While this is very difficult due to
+> 128 bits of entropy and Argon2id's computational cost, both `concat` and
+> `hkdf` avoid this issue entirely. New keys should always use `hkdf`.
 
 ## Running tests.
 
