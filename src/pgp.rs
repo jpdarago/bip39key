@@ -70,7 +70,7 @@ fn output_as_packet(
     Ok(())
 }
 
-// Encode buffer as MPI (Multi Precision Intenger), defined in OpenPGP RFC 4880.
+// Encode buffer as MPI (Multi Precision Integer), defined in OpenPGP RFC 4880.
 fn mpi_encode(data: &[u8]) -> Vec<u8> {
     let mut slice = data;
     // Remove all leading zeroes.
@@ -146,7 +146,7 @@ fn public_subkey_payload(key: &EncryptKey) -> Result<Vec<u8>> {
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     cursor.write_all(&[0x04])?; // Version 4.
     cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
-    cursor.write_all(&[18])?; // Elliptic Curve Diffie-Hellmann.
+    cursor.write_all(&[18])?; // Elliptic Curve Diffie-Hellman.
     let oid: [u8; 10] = [0x2b, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01]; // Curve25519
     cursor.write_all(&[oid.len().try_into()?])?;
     cursor.write_all(&oid)?;

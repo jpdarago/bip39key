@@ -16,7 +16,7 @@ In all cases the tool requires a User ID in [RFC 2822](https://datatracker.ietf.
 
 When providing a passphrase, the tool will use it to generate the key together
 with the seed from the BIP39 mnemonic and the user id, and will also encrypt the 
-resulting OpenPGP/OpenSSH keys with  the provided passphrase.
+resulting OpenPGP/OpenSSH keys with the provided passphrase.
 
 The creation timestamp for the OpenPGP keys is set to the Bitcoin genesis block
 timestamp (1231006505 in seconds from Unix epoch). GPG considers this part of

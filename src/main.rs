@@ -51,7 +51,7 @@ struct Args {
     #[clap(short = 'd', long)]
     creation_timestamp: Option<i64>,
 
-    /// Creation timestamp (as unix timestamp in seconds). If unset, the keys do not expire.
+    /// Expiration timestamp (as unix timestamp in seconds). If unset, the keys do not expire.
     #[clap(short = 'y', long)]
     expiration_timestamp: Option<i64>,
 
@@ -231,11 +231,11 @@ fn validate(args: &Args) -> Result<()> {
     }
     let creation_timestamp_secs = get_creation_timestamp_secs(args);
     if creation_timestamp_secs < 0 {
-        bail!("--creation_timestamp_secs must be a positive number");
+        bail!("--creation-timestamp must be a positive number");
     }
     if let Some(expiration_secs) = args.expiration_timestamp {
         if expiration_secs < 0 {
-            bail!("--creation_timestamp_secs must be a positive number");
+            bail!("--expiration-timestamp must be a positive number");
         }
         if expiration_secs < creation_timestamp_secs {
             bail!(
