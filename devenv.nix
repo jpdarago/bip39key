@@ -12,6 +12,7 @@
     rust-analyzer
     rustc
     rustfmt
+    cargo-audit
   ];
 
   env.RUST_ANALYZER_LOCATION = "${pkgs.rust-analyzer}/bin/rust-analyzer";
