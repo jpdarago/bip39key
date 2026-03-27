@@ -16,6 +16,7 @@ clap = { version = "4.4.11", features = ["derive"] }
 ctr = "0.9.1"
 ed25519-dalek = "2.1.0"
 hex = "0.4.3"
+hkdf = "0.12"
 hmac = "0.12.1"
 inquire = "0.6.2"
 lazy_static = "1.4.0"

@@ -1,4 +1,6 @@
 use crate::types::*;
+use hkdf::Hkdf;
+use sha2::Sha256;
 
 pub struct UserId {
     pub user_id: String,
@@ -72,6 +74,18 @@ pub struct Keys {
     pub passphrase: Option<String>,
 }
 
+/// Key derivation algorithm for combining seed and passphrase.
+#[derive(PartialEq, Eq, Clone, clap::ValueEnum, Debug)]
+pub enum KeyAlgorithm {
+    /// DEPRECATED: XOR of separate Argon2id hashes of seed and passphrase.
+    Xor,
+    /// DEPRECATED: Argon2id of concatenated seed and passphrase, split into sign/encrypt keys.
+    Concat,
+    /// Argon2id of concatenated seed and passphrase, then HKDF-Expand with domain separation
+    /// for sign and encrypt keys.
+    Hkdf,
+}
+
 fn run_argon(bytes: &[u8], user_id: &str, use_rfc9106_settings: bool) -> Result<Vec<u8>> {
     let config = if use_rfc9106_settings {
         let mut result = argon2::Config::rfc9106();
@@ -90,6 +104,15 @@ fn run_argon(bytes: &[u8], user_id: &str, use_rfc9106_settings: bool) -> Result<
         }
     };
     Ok(argon2::hash_raw(bytes, user_id.as_bytes(), &config)?)
+}
+
+fn hkdf_expand(prk: &[u8], info: &[u8], length: usize) -> Result<Vec<u8>> {
+    let hkdf = Hkdf::<Sha256>::from_prk(prk)
+        .map_err(|e| anyhow::anyhow!("HKDF-Expand: invalid PRK: {e}"))?;
+    let mut output = vec![0u8; length];
+    hkdf.expand(info, &mut output)
+        .map_err(|e| anyhow::anyhow!("HKDF-Expand: {e}"))?;
+    Ok(output)
 }
 
 pub struct KeySettings {
@@ -126,6 +149,28 @@ impl Keys {
             },
             passphrase: settings.passphrase,
         })
+    }
+
+    /// Derive keys using HKDF-Expand with domain separation.
+    /// The Argon2id output is used as PRK, and separate info strings produce
+    /// independent sign and encrypt key material.
+    pub fn new_with_hkdf(settings: KeySettings) -> Result<Keys> {
+        let prk = if let Some(pass) = &settings.passphrase {
+            let mut bytes = settings.seed.to_vec();
+            bytes.extend_from_slice(pass.as_bytes());
+            run_argon(&bytes, &settings.user_id, settings.use_rfc9106_settings)?
+        } else {
+            run_argon(
+                &settings.seed,
+                &settings.user_id,
+                settings.use_rfc9106_settings,
+            )?
+        };
+        let sign_key_bytes = hkdf_expand(&prk, b"bip39key-sign-v1", 32)?;
+        let encrypt_key_bytes = hkdf_expand(&prk, b"bip39key-encrypt-v1", 32)?;
+        let mut secret_key_bytes = sign_key_bytes;
+        secret_key_bytes.extend_from_slice(&encrypt_key_bytes);
+        Self::build_keys(&secret_key_bytes, settings)
     }
 
     pub fn new_with_concat(settings: KeySettings) -> Result<Keys> {

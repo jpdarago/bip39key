@@ -189,17 +189,31 @@ class Bip39KeyTest(unittest.TestCase):
         else:
             gpg.run(flags, key)
 
-    def test_gpg_raw(self):
+    def test_gpg_raw_xor(self):
         with GPG() as gpg:
-            stdout, _ = run_bip39key(BIP39, USERID)
+            stdout, _ = run_bip39key(BIP39, USERID, ["--algorithm", "xor"])
             self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
             self.check_key(keys)
 
+    def test_gpg_raw_hkdf(self):
+        with GPG() as gpg:
+            stdout, _ = run_bip39key(BIP39, USERID, ["--algorithm", "hkdf"])
+            self.run_gpg_import(gpg, key=stdout)
+            keysout, _ = gpg.run(["--with-colons", "--list-keys"])
+            keys = parse_gpg_keys(keysout)
+            self.check_key(
+                keys,
+                fp="67EAE06904766020FB5B41B314B8857D6EFD7E9F",
+                subfp="14B8857D6EFD7E9F",
+            )
+
     def test_gpg_public(self):
         with GPG() as gpg:
-            stdout, _ = run_bip39key(BIP39, USERID, ["--public-key"])
+            stdout, _ = run_bip39key(
+                BIP39, USERID, ["--public-key", "--algorithm", "xor"]
+            )
             self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
@@ -210,7 +224,9 @@ class Bip39KeyTest(unittest.TestCase):
     def test_gpg_raw_with_file(self):
         with GPG() as gpg:
             f = tempfile.NamedTemporaryFile(delete=False)
-            stdout, _ = run_bip39key(BIP39, USERID, ["-o", f.name])
+            stdout, _ = run_bip39key(
+                BIP39, USERID, ["-o", f.name, "--algorithm", "xor"]
+            )
             f.close()
             self.run_gpg_import(gpg, filename=f.name, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
@@ -220,7 +236,7 @@ class Bip39KeyTest(unittest.TestCase):
 
     def test_gpg_armor(self):
         with GPG() as gpg:
-            stdout, _ = run_bip39key(BIP39, USERID, ["-a"])
+            stdout, _ = run_bip39key(BIP39, USERID, ["-a", "--algorithm", "xor"])
             self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
@@ -228,7 +244,9 @@ class Bip39KeyTest(unittest.TestCase):
 
     def test_electrum(self):
         with GPG() as gpg:
-            stdout, _ = run_bip39key(ELECTRUM, USERID, ["-s", "electrum"])
+            stdout, _ = run_bip39key(
+                ELECTRUM, USERID, ["-s", "electrum", "--algorithm", "xor"]
+            )
             self.run_gpg_import(gpg, key=stdout)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
@@ -240,8 +258,7 @@ class Bip39KeyTest(unittest.TestCase):
 
     def test_gpg_import_with_passphrase(self):
         with GPG() as gpg:
-            stdout, _ = run_bip39key(BIP39, USERID, ["-p", PASS])
-            passfile = os.path.join(gpg.tmpdir.name, "passwords.txt")
+            stdout, _ = run_bip39key(BIP39, USERID, ["-p", PASS, "--algorithm", "xor"])
             self.run_gpg_import(gpg, key=stdout, password=PASS)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
             keys = parse_gpg_keys(keysout)
@@ -251,12 +268,19 @@ class Bip39KeyTest(unittest.TestCase):
                 subfp="95C556EA825BA259",
             )
 
-    def test_ssh(self):
+    def test_ssh_xor(self):
+        secretkey, _ = run_bip39key(BIP39, USERID, ["-f", "ssh", "--algorithm", "xor"])
+        keygenpub, _ = run_ssh_keygen(secretkey)
+        bip39pub, _ = run_bip39key(
+            BIP39, USERID, ["-f", "ssh", "--public-key", "--algorithm", "xor"]
+        )
+        lhs, rhs = keygenpub.strip(), bip39pub.strip()
+        self.assertTrue(lhs.startswith(rhs), msg="{} vs {}".format(lhs, rhs))
+
+    def test_ssh_hkdf(self):
         secretkey, _ = run_bip39key(BIP39, USERID, ["-f", "ssh"])
         keygenpub, _ = run_ssh_keygen(secretkey)
         bip39pub, _ = run_bip39key(BIP39, USERID, ["-f", "ssh", "--public-key"])
-        # The bip39 pub might contain less information than ssh-keygen,
-        # e.g. it will not contain the comments.
         lhs, rhs = keygenpub.strip(), bip39pub.strip()
         self.assertTrue(lhs.startswith(rhs), msg="{} vs {}".format(lhs, rhs))
 
@@ -271,7 +295,7 @@ class Bip39KeyTest(unittest.TestCase):
             run_bip39key(mnemonic, USERID, ["-f", "ssh"])
 
     def test_gpg_import_with_passphrase_fails(self):
-        stdout, stderr = run_bip39key(BIP39, USERID, ["-p", PASS])
+        stdout, stderr = run_bip39key(BIP39, USERID, ["-p", PASS, "--algorithm", "xor"])
         with GPG() as gpg:
             keyfile = os.path.join(gpg.tmpdir.name, "key.gpg")
             with open(keyfile, "wb") as f:
@@ -289,7 +313,9 @@ class Bip39KeyTest(unittest.TestCase):
             os.remove(keyfile)
 
     def test_ssh_with_passphrase(self):
-        stdout, stderr = run_bip39key(BIP39, USERID, ["-f", "ssh", "-p", PASS])
+        stdout, stderr = run_bip39key(
+            BIP39, USERID, ["-f", "ssh", "-p", PASS, "--algorithm", "xor"]
+        )
         run_ssh_keygen(stdout, passphrase=PASS)
         with self.assertRaises(Exception):
             run_ssh_keygen(stdout, passphrase="badpassword")
@@ -300,7 +326,9 @@ class Bip39KeyTest(unittest.TestCase):
         )
         password = "magic-password"
         userid = "Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(bip39, userid, ["-p", password])
+        stdout, stderr = run_bip39key(
+            bip39, userid, ["-p", password, "--algorithm", "xor"]
+        )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
             message, _ = gpg.run(
@@ -323,7 +351,7 @@ class Bip39KeyTest(unittest.TestCase):
             " "
         )
         userid = "Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(bip39, userid)
+        stdout, stderr = run_bip39key(bip39, userid, ["--algorithm", "xor"])
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=None)
             message, _ = gpg.run(
@@ -343,7 +371,9 @@ class Bip39KeyTest(unittest.TestCase):
         )
         password = "magic-password"
         userid = "Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(bip39, userid, ["-c", "-p", password])
+        stdout, stderr = run_bip39key(
+            bip39, userid, ["--algorithm", "concat", "-p", password]
+        )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
             message, _ = gpg.run(
@@ -368,7 +398,7 @@ class Bip39KeyTest(unittest.TestCase):
         password = "magic-password"
         userid = "Integration Test <integration@test.com>"
         stdout, stderr = run_bip39key(
-            electrum, userid, ["-p", password, "-s", "electrum"]
+            electrum, userid, ["-p", password, "-s", "electrum", "--algorithm", "xor"]
         )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
@@ -394,7 +424,9 @@ class Bip39KeyTest(unittest.TestCase):
         password = "magic-password"
         userid = "Integration Test <integration@test.com>"
         stdout, stderr = run_bip39key(
-            electrum, userid, ["-c", "-p", password, "-s", "electrum"]
+            electrum,
+            userid,
+            ["--algorithm", "concat", "-p", password, "-s", "electrum"],
         )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
@@ -419,7 +451,9 @@ class Bip39KeyTest(unittest.TestCase):
         )
         password = "magic-password"
         userid = "Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(bip39, userid, ["-p", password])
+        stdout, stderr = run_bip39key(
+            bip39, userid, ["-p", password, "--algorithm", "xor"]
+        )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
             message, _ = gpg.run(
@@ -449,7 +483,16 @@ class Bip39KeyTest(unittest.TestCase):
         stdout, stderr = run_bip39key(
             bip39,
             userid,
-            ["-p", password, "-c", "-d", creation_time, "-y", expiration_time],
+            [
+                "-p",
+                password,
+                "--algorithm",
+                "concat",
+                "-d",
+                creation_time,
+                "-y",
+                expiration_time,
+            ],
         )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
@@ -464,7 +507,9 @@ class Bip39KeyTest(unittest.TestCase):
         )
         password = "magic-password"
         userid = "Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(bip39, userid, ["-p", password, "-c", "-b"])
+        stdout, stderr = run_bip39key(
+            bip39, userid, ["-p", password, "--algorithm", "concat", "-b"]
+        )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
             keysout, _ = gpg.run(["--with-colons", "--list-keys"])
@@ -477,7 +522,9 @@ class Bip39KeyTest(unittest.TestCase):
         )
         password = "magic-password"
         userid = "Integration Test <integration@test.com>"
-        stdout, stderr = run_bip39key(bip39, userid, ["-p", password, "-n"])
+        stdout, stderr = run_bip39key(
+            bip39, userid, ["-p", password, "-n", "--algorithm", "xor"]
+        )
         with GPG() as gpg:
             self.run_gpg_import(gpg, key=stdout, password=password)
             message, _ = gpg.run(

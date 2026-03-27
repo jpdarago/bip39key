@@ -85,9 +85,14 @@ struct Args {
     #[clap(short, long, default_value = "bip39")]
     seed_format: seed::SeedFormat,
 
-    /// Use a hash of the concatenation of key and password instead of XOR of the hashes.
-    #[clap(short = 'c', long)]
+    /// DEPRECATED: Use concatenation method. Equivalent to --algorithm concat.
+    #[clap(short = 'c', long, hide = true)]
     use_concatenation: bool,
+
+    /// Key derivation algorithm: xor (deprecated), concat (deprecated), hkdf (recommended).
+    /// Use xor or concat only to regenerate keys created with older versions.
+    #[clap(short = 'g', long, default_value = "hkdf")]
+    algorithm: keys::KeyAlgorithm,
 
     /// DEPRECATED! Request seed phrase through an interactive CLI prompt.
     #[clap(short = 'q', long)]
@@ -254,6 +259,9 @@ fn validate(args: &Args) -> Result<()> {
     if args.passphrase.is_some() && args.pinentry {
         bail!("One of --passphrase/--pinentry must be set at a time.");
     }
+    if args.use_concatenation && args.algorithm != keys::KeyAlgorithm::Hkdf {
+        bail!("-c/--use-concatenation cannot be combined with --algorithm. Use --algorithm alone.");
+    }
     Ok(())
 }
 
@@ -284,12 +292,29 @@ fn main() -> Result<()> {
         use_rfc9106_settings: args.use_rfc9106_settings,
         use_authorization_for_sign_key: args.authorization_for_sign_key,
     };
-    console_logln!("Generating key entropy");
-    let keys = if args.use_concatenation {
-        Keys::new_with_concat(settings)
+    let algorithm = if args.use_concatenation {
+        keys::KeyAlgorithm::Concat
     } else {
-        console_logln!("WARNING: Using deprecated xor method, if making a new key prefer to use concatenation method with -c"); 
-        Keys::new_with_xor(settings)
+        args.algorithm.clone()
+    };
+    match algorithm {
+        keys::KeyAlgorithm::Xor => {
+            console_logln!(
+                "WARNING: xor algorithm is deprecated. Use --algorithm hkdf for new keys."
+            );
+        }
+        keys::KeyAlgorithm::Concat => {
+            console_logln!(
+                "WARNING: concat algorithm is deprecated. Use --algorithm hkdf for new keys."
+            );
+        }
+        keys::KeyAlgorithm::Hkdf => {}
+    }
+    console_logln!("Generating key entropy");
+    let keys = match algorithm {
+        keys::KeyAlgorithm::Hkdf => Keys::new_with_hkdf(settings),
+        keys::KeyAlgorithm::Concat => Keys::new_with_concat(settings),
+        keys::KeyAlgorithm::Xor => Keys::new_with_xor(settings),
     }
     .expect("Could not build keys");
     console_logln!("Done generating key entropy");
