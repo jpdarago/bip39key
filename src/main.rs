@@ -265,6 +265,32 @@ fn validate(args: &Args) -> Result<()> {
     Ok(())
 }
 
+/// Format the key fingerprint for display.
+/// PGP: groups of 4 hex chars separated by spaces, with a double space in the middle
+/// (e.g. "67EA E069 0476 6020 FB5B  41B3 14B8 857D 6EFD 7E9F").
+/// SSH: SHA256 hash of the public key in base64 (e.g. "SHA256:...").
+fn format_fingerprint(args: &Args, keys: &Keys) -> Result<String> {
+    match args.format {
+        OutputFormat::Pgp => {
+            let fp = pgp::key_fingerprint(&keys.sign_key)?;
+            let hex: Vec<String> = fp.iter().map(|b| format!("{:02X}", b)).collect();
+            let formatted = hex
+                .chunks(2)
+                .map(|pair| pair.join(""))
+                .collect::<Vec<_>>()
+                .chunks(5)
+                .map(|group| group.join(" "))
+                .collect::<Vec<_>>()
+                .join("  ");
+            Ok(format!("PGP fingerprint: {}", formatted))
+        }
+        OutputFormat::Ssh => {
+            let fp = ssh::key_fingerprint(keys)?;
+            Ok(format!("SSH fingerprint: SHA256:{}", fp))
+        }
+    }
+}
+
 fn main() -> Result<()> {
     console_logln!("Welcome to BIP39Key");
 
@@ -318,24 +344,6 @@ fn main() -> Result<()> {
     }
     .expect("Could not build keys");
     console_logln!("Done generating key entropy");
-    match args.format {
-        OutputFormat::Pgp => {
-            let fp = pgp::key_fingerprint(&keys.sign_key)?;
-            let hex: Vec<String> = fp.iter().map(|b| format!("{:02X}", b)).collect();
-            let formatted = hex
-                .chunks(2)
-                .map(|pair| pair.join(""))
-                .collect::<Vec<_>>()
-                .chunks(5)
-                .map(|group| group.join(" "))
-                .collect::<Vec<_>>()
-                .join("  ");
-            console_logln!("PGP fingerprint: {}", formatted);
-        }
-        OutputFormat::Ssh => {
-            let fp = ssh::key_fingerprint(&keys)?;
-            console_logln!("SSH fingerprint: SHA256:{}", fp);
-        }
-    }
+    console_logln!("{}", format_fingerprint(&args, &keys)?);
     output_keys(&args, &keys)
 }
