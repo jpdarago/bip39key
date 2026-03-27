@@ -103,17 +103,19 @@ the User ID as the salt.
 Optionally, you can provide a passphrase. The `--algorithm` flag controls how
 the seed and passphrase are combined:
 
-* **`hkdf`** (default, recommended) — Concatenates the seed and passphrase,
+* **`xor`** (current default) — Applies Argon2id separately to the seed and
+  passphrase, then XORs the results.
+* **`concat`** — Concatenates the seed and passphrase, applies Argon2id, and
+  splits the output at a fixed offset into sign and encrypt keys.
+* **`hkdf`** (recommended for new keys) — Concatenates the seed and passphrase,
   applies Argon2id, then uses HKDF-Expand (RFC 5869) with distinct info strings
   (`bip39key-sign-v1` and `bip39key-encrypt-v1`) to derive independent sign and
   encrypt keys. This provides proper domain separation between key types.
-* **`concat`** (deprecated) — Concatenates the seed and passphrase, applies
-  Argon2id, and splits the output at a fixed offset into sign and encrypt keys.
-* **`xor`** (deprecated) — Applies Argon2id separately to the seed and
-  passphrase, then XORs the results.
 
-Use `--algorithm xor` or `--algorithm concat` only to regenerate keys that were
-created with older versions of `bip39key`.
+> :warning: **Breaking change in v2.0:** The default algorithm will change from
+> `xor` to `hkdf`. If you have existing keys generated without `--algorithm`,
+> they were created with `xor`. To ensure you can always regenerate them, pass
+> `--algorithm xor` explicitly. New keys should use `--algorithm hkdf`.
 
 The passphrase is also used to encrypt the OpenPGP and SSH files themselves. If
 you want to keep that encryption but not use the passphrase as additional entropy,
@@ -123,7 +125,7 @@ then pass the `--skip-passphrase-for-key-material/-n` option.
 > passphrase and output key, they can recover the hashed seed via XOR and
 > attempt to brute force the input phrase. While this is very difficult due to
 > 128 bits of entropy and Argon2id's computational cost, both `concat` and
-> `hkdf` avoid this issue entirely. New keys should always use `hkdf`.
+> `hkdf` avoid this issue entirely.
 
 ## Running tests.
 
