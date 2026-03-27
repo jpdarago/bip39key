@@ -3,6 +3,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![build](https://github.com/jpdarago/bip39key/actions/workflows/rust.yml/badge.svg)
 
+> :warning: **Disclaimer:** This software was not written by a cryptography
+> expert. It is provided as-is, with no warranty or guarantee of correctness or
+> security. **Use at your own risk.** You are strongly advised to review the code
+> and understand its limitations before using it to generate keys for any
+> purpose.
+
+> :warning: **Breaking change in v2.0:** The default key derivation algorithm
+> will change from `xor` to `hkdf`. If you have existing keys generated without
+> the `--algorithm` flag, they were created with `xor`. To ensure you can always
+> regenerate them, pass `--algorithm xor` explicitly. New keys should use
+> `--algorithm hkdf`.
+
 Generates a cryptographical key from a [BIP39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki) mnemonic (and, optionally, a
 passphrase).
 
@@ -111,11 +123,6 @@ the seed and passphrase are combined:
   applies Argon2id, then uses HKDF-Expand (RFC 5869) with distinct info strings
   (`bip39key-sign-v1` and `bip39key-encrypt-v1`) to derive independent sign and
   encrypt keys. This provides proper domain separation between key types.
-
-> :warning: **Breaking change in v2.0:** The default algorithm will change from
-> `xor` to `hkdf`. If you have existing keys generated without `--algorithm`,
-> they were created with `xor`. To ensure you can always regenerate them, pass
-> `--algorithm xor` explicitly. New keys should use `--algorithm hkdf`.
 
 The passphrase is also used to encrypt the OpenPGP and SSH files themselves. If
 you want to keep that encryption but not use the passphrase as additional entropy,
