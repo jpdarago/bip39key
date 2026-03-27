@@ -318,5 +318,24 @@ fn main() -> Result<()> {
     }
     .expect("Could not build keys");
     console_logln!("Done generating key entropy");
+    match args.format {
+        OutputFormat::Pgp => {
+            let fp = pgp::key_fingerprint(&keys.sign_key)?;
+            let hex: Vec<String> = fp.iter().map(|b| format!("{:02X}", b)).collect();
+            let formatted = hex
+                .chunks(2)
+                .map(|pair| pair.join(""))
+                .collect::<Vec<_>>()
+                .chunks(5)
+                .map(|group| group.join(" "))
+                .collect::<Vec<_>>()
+                .join("  ");
+            console_logln!("PGP fingerprint: {}", formatted);
+        }
+        OutputFormat::Ssh => {
+            let fp = ssh::key_fingerprint(&keys)?;
+            console_logln!("SSH fingerprint: SHA256:{}", fp);
+        }
+    }
     output_keys(&args, &keys)
 }

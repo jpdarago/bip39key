@@ -240,7 +240,7 @@ fn output_encrypted_secret_key(
     output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
 }
 
-fn key_fingerprint(key: &SignKey) -> Result<Vec<u8>> {
+pub fn key_fingerprint(key: &SignKey) -> Result<Vec<u8>> {
     let mut hasher = sha1::Sha1::new();
     let mut cursor = ByteCursor::new(Vec::with_capacity(256));
     output_public_key(key, &mut cursor)?;
