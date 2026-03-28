@@ -127,6 +127,7 @@ dependencies = [
  "hkdf",
  "hmac",
  "inquire",
+ "libc",
  "pbkdf2 0.12.2",
  "rand",
  "rust-argon2",
@@ -136,6 +137,7 @@ dependencies = [
  "textwrap",
  "tiny-bip39",
  "x25519-dalek",
+ "zeroize",
 ]
 
 [[package]]

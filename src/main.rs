@@ -291,7 +291,21 @@ fn format_fingerprint(args: &Args, keys: &Keys) -> Result<String> {
     }
 }
 
+/// Prevent the process from producing core dumps that could leak key material.
+/// On Linux this uses prctl(PR_SET_DUMPABLE, 0). On other platforms this is a no-op.
+fn disable_core_dumps() {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: prctl(PR_SET_DUMPABLE, 0) is a simple flag-setting syscall with no
+        // memory or resource side effects.
+        unsafe {
+            libc::prctl(libc::PR_SET_DUMPABLE, 0);
+        }
+    }
+}
+
 fn main() -> Result<()> {
+    disable_core_dumps();
     console_logln!("Welcome to BIP39Key");
 
     let args = Args::parse();

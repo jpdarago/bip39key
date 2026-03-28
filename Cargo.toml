@@ -14,7 +14,7 @@ byteorder = "1.4.3"
 cfb-mode = "0.8.1"
 clap = { version = "4.4.11", features = ["derive"] }
 ctr = "0.9.1"
-ed25519-dalek = "2.1.0"
+ed25519-dalek = { version = "2.1.0", features = ["zeroize"] }
 hex = "0.4.3"
 hkdf = "0.12"
 hmac = "0.12.1"
@@ -25,6 +25,8 @@ rust-argon2 = "2.0.0"
 sha1 = "0.10.0"
 sha2 = "0.10.2"
 strsim = "0.11.1"
+libc = "0.2"
 textwrap = "0.16"
+zeroize = { version = "1", features = ["derive"] }
 tiny-bip39 = "1.0.0"
-x25519-dalek = { version = "2.0.0-rc3", features = ["static_secrets"] }
+x25519-dalek = { version = "2.0.0-rc3", features = ["static_secrets", "zeroize"] }

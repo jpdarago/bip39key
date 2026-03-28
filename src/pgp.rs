@@ -7,6 +7,7 @@ use ed25519_dalek::Signer;
 use rand::RngCore;
 use sha2::Digest;
 use std::io::Write;
+use zeroize::Zeroize;
 
 type Aes256Cfb = cfb_mode::Encryptor<aes::Aes256>;
 
@@ -101,6 +102,7 @@ fn s2k_key(passphrase: &str, salt: &[u8], count: usize) -> Vec<u8> {
     }
     let tail = count - iterations * buf.len();
     hash.update(&buf[..tail]);
+    buf.zeroize();
     hash.finalize().to_vec()
 }
 
@@ -110,7 +112,7 @@ fn s2k_encrypt(key: &[u8], passphrase: &str, out: &mut ByteCursor) -> Result<()>
     let max_s2k_count = s2k_byte_count(0xFF);
     let salt = &salt_and_iv[..8];
     let iv = &salt_and_iv[8..];
-    let encrypt_key = s2k_key(passphrase, salt, max_s2k_count);
+    let mut encrypt_key = s2k_key(passphrase, salt, max_s2k_count);
     let mut data = mpi_encode(key);
     // Compute SHA1 and append it as HMAC to the data.
     let mut mac = sha1::Sha1::new();
@@ -118,6 +120,7 @@ fn s2k_encrypt(key: &[u8], passphrase: &str, out: &mut ByteCursor) -> Result<()>
     data.extend(mac.finalize());
     // Encrypt data using AES.
     Aes256Cfb::new(encrypt_key.as_slice().into(), iv.into()).encrypt(&mut data);
+    encrypt_key.zeroize();
     // S2K Encrypted. AES256, Iterated and Salted S2k, SHA-256
     out.write_all(&[254, 9, 3, 8])?;
     out.write_all(salt)?;
@@ -173,9 +176,11 @@ fn output_unencrypted_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> R
     // uses big-endian representation of numbers.
     let mut reverse_secret_key = key.private_key;
     reverse_secret_key.reverse();
-    let mpi_key = mpi_encode(&reverse_secret_key);
+    let mut mpi_key = mpi_encode(&reverse_secret_key);
+    reverse_secret_key.zeroize();
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
+    mpi_key.zeroize();
     output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
@@ -192,6 +197,7 @@ fn output_encrypted_secret_subkey(
     let mut reverse_secret_key = key.private_key;
     reverse_secret_key.reverse();
     s2k_encrypt(&reverse_secret_key, passphrase, &mut cursor)?;
+    reverse_secret_key.zeroize();
     output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
@@ -222,9 +228,10 @@ fn output_unencrypted_secret_key(key: &SignKey, out: &mut ByteCursor) -> Result<
     cursor.write_all(&payload)?;
     // S2K unencrypted i.e. without passphrase protection.
     cursor.write_all(&[0])?;
-    let mpi_key = mpi_encode(&key.private_key);
+    let mut mpi_key = mpi_encode(&key.private_key);
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
+    mpi_key.zeroize();
     output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
 }
 
