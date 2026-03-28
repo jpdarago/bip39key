@@ -1,6 +1,7 @@
 use crate::types::*;
 use hkdf::Hkdf;
 use sha2::Sha256;
+use zeroize::Zeroize;
 
 pub struct UserId {
     pub user_id: String,
@@ -13,6 +14,20 @@ pub struct SignKey {
     pub creation_timestamp_secs: i64,
     pub expiration_timestamp_secs: Option<i64>,
     pub use_authorization_for_sign_key: bool,
+}
+
+impl Zeroize for SignKey {
+    fn zeroize(&mut self) {
+        self.private_key.zeroize();
+        // Overwrite the SigningKey by replacing it with a key derived from zeroed bytes.
+        self.signing_key = ed25519_dalek::SigningKey::from_bytes(&[0u8; 32]);
+    }
+}
+
+impl Drop for SignKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 impl SignKey {
@@ -41,6 +56,18 @@ pub struct EncryptKey {
     pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
     pub creation_timestamp_secs: i64,
     pub expiration_timestamp_secs: Option<i64>,
+}
+
+impl Zeroize for EncryptKey {
+    fn zeroize(&mut self) {
+        self.private_key.zeroize();
+    }
+}
+
+impl Drop for EncryptKey {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 impl EncryptKey {
@@ -72,6 +99,14 @@ pub struct Keys {
     pub sign_key: SignKey,
     pub encrypt_key: Option<EncryptKey>,
     pub passphrase: Option<String>,
+}
+
+impl Drop for Keys {
+    fn drop(&mut self) {
+        if let Some(ref mut p) = self.passphrase {
+            p.zeroize();
+        }
+    }
 }
 
 /// Key derivation algorithm for combining seed and passphrase.
@@ -126,11 +161,20 @@ pub struct KeySettings {
     pub use_authorization_for_sign_key: bool,
 }
 
+impl Drop for KeySettings {
+    fn drop(&mut self) {
+        self.seed.zeroize();
+        if let Some(ref mut p) = self.passphrase {
+            p.zeroize();
+        }
+    }
+}
+
 impl Keys {
-    fn build_keys(secret_key_bytes: &[u8], settings: KeySettings) -> Result<Keys> {
+    fn build_keys(secret_key_bytes: &[u8], mut settings: KeySettings) -> Result<Keys> {
         Ok(Keys {
             user_id: UserId {
-                user_id: settings.user_id,
+                user_id: std::mem::take(&mut settings.user_id),
             },
             sign_key: SignKey::new(
                 &secret_key_bytes[..32],
@@ -147,7 +191,7 @@ impl Keys {
             } else {
                 None
             },
-            passphrase: settings.passphrase,
+            passphrase: settings.passphrase.take(),
         })
     }
 
@@ -155,10 +199,12 @@ impl Keys {
     /// The Argon2id output is used as PRK, and separate info strings produce
     /// independent sign and encrypt key material.
     pub fn new_with_hkdf(settings: KeySettings) -> Result<Keys> {
-        let prk = if let Some(pass) = &settings.passphrase {
+        let mut prk = if let Some(pass) = &settings.passphrase {
             let mut bytes = settings.seed.to_vec();
             bytes.extend_from_slice(pass.as_bytes());
-            run_argon(&bytes, &settings.user_id, settings.use_rfc9106_settings)?
+            let result = run_argon(&bytes, &settings.user_id, settings.use_rfc9106_settings)?;
+            bytes.zeroize();
+            result
         } else {
             run_argon(
                 &settings.seed,
@@ -167,18 +213,24 @@ impl Keys {
             )?
         };
         let sign_key_bytes = hkdf_expand(&prk, b"bip39key-sign-v1", 32)?;
-        let encrypt_key_bytes = hkdf_expand(&prk, b"bip39key-encrypt-v1", 32)?;
+        let mut encrypt_key_bytes = hkdf_expand(&prk, b"bip39key-encrypt-v1", 32)?;
+        prk.zeroize();
         let mut secret_key_bytes = sign_key_bytes;
         secret_key_bytes.extend_from_slice(&encrypt_key_bytes);
-        Self::build_keys(&secret_key_bytes, settings)
+        encrypt_key_bytes.zeroize();
+        let result = Self::build_keys(&secret_key_bytes, settings);
+        secret_key_bytes.zeroize();
+        result
     }
 
     pub fn new_with_concat(settings: KeySettings) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt.
-        let secret_key_bytes = if let Some(pass) = &settings.passphrase {
+        let mut secret_key_bytes = if let Some(pass) = &settings.passphrase {
             let mut bytes = settings.seed.to_vec();
             bytes.extend_from_slice(pass.as_bytes());
-            run_argon(&bytes, &settings.user_id, settings.use_rfc9106_settings)?
+            let result = run_argon(&bytes, &settings.user_id, settings.use_rfc9106_settings)?;
+            bytes.zeroize();
+            result
         } else {
             run_argon(
                 &settings.seed,
@@ -186,28 +238,33 @@ impl Keys {
                 settings.use_rfc9106_settings,
             )?
         };
-        Self::build_keys(&secret_key_bytes, settings)
+        let result = Self::build_keys(&secret_key_bytes, settings);
+        secret_key_bytes.zeroize();
+        result
     }
 
     pub fn new_with_xor(settings: KeySettings) -> Result<Keys> {
         // Derive 64 bytes by running Argon with the user id as salt
-        let secret_key_bytes = if let Some(pass) = &settings.passphrase {
-            let bytes = run_argon(
+        let mut secret_key_bytes = if let Some(pass) = &settings.passphrase {
+            let mut bytes = run_argon(
                 &settings.seed,
                 &settings.user_id,
                 settings.use_rfc9106_settings,
             )?;
             // Generate another buffer with Argon for the passphrase and XOR it.
-            let passphrase_bytes = run_argon(
+            let mut passphrase_bytes = run_argon(
                 pass.as_bytes(),
                 &settings.user_id,
                 settings.use_rfc9106_settings,
             )?;
-            bytes
+            let result: Vec<u8> = bytes
                 .iter()
                 .zip(passphrase_bytes.iter())
                 .map(|(lhs, rhs)| lhs ^ rhs)
-                .collect()
+                .collect();
+            bytes.zeroize();
+            passphrase_bytes.zeroize();
+            result
         } else {
             run_argon(
                 &settings.seed,
@@ -215,6 +272,8 @@ impl Keys {
                 settings.use_rfc9106_settings,
             )?
         };
-        Self::build_keys(&secret_key_bytes, settings)
+        let result = Self::build_keys(&secret_key_bytes, settings);
+        secret_key_bytes.zeroize();
+        result
     }
 }

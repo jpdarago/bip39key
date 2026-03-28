@@ -6,6 +6,7 @@ use bcrypt_pbkdf::bcrypt_pbkdf;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
 use rand::RngCore;
 use std::io::Write;
+use zeroize::Zeroize;
 
 type Aes256Ctr = ctr::Ctr64BE<aes::Aes256>;
 
@@ -95,6 +96,7 @@ fn put_ssh_key_with_passphrase(
     bcrypt_pbkdf(passphrase, salt, rounds, &mut buf)?;
     let mut stream = Aes256Ctr::new(buf[..32].into(), buf[32..].into());
     stream.apply_keystream(content);
+    buf.zeroize();
     put_bytes(content, cursor)?;
     Ok(())
 }
