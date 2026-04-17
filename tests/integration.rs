@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Output;
 
+use duct::cmd;
 use tempfile::{NamedTempFile, TempDir};
 
 // --- Constants ---
@@ -32,51 +33,6 @@ fn golden_path(filename: &str) -> PathBuf {
         .join(filename)
 }
 
-// --- Command runner ---
-
-fn run_command(
-    args: &[&str],
-    stdin_data: Option<&[u8]>,
-    extra_env: &[(&str, &str)],
-) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let mut cmd = Command::new(args[0]);
-    cmd.args(&args[1..])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for &(key, value) in extra_env {
-        cmd.env(key, value);
-    }
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn {:?}: {}", args[0], e))?;
-
-    if let Some(data) = stdin_data {
-        child
-            .stdin
-            .as_mut()
-            .unwrap()
-            .write_all(data)
-            .map_err(|e| format!("Failed to write stdin: {e}"))?;
-    }
-    drop(child.stdin.take());
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("Failed to wait for {:?}: {e}", args[0]))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "{:?} failed (exit {}):\n{}",
-            args,
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    Ok((output.stdout, output.stderr))
-}
-
 // --- GPG wrapper ---
 
 struct Gpg {
@@ -103,10 +59,9 @@ impl Gpg {
         self.tmpdir.path().to_str().unwrap()
     }
 
-    fn run(&self, flags: &[&str], stdin: Option<&[u8]>) -> Result<(Vec<u8>, Vec<u8>), String> {
-        let homedir = self.homedir().to_string();
-        let mut args: Vec<&str> = vec![
-            "gpg",
+    fn run(&self, flags: &[&str], stdin: Option<&[u8]>) -> io::Result<Output> {
+        let homedir = self.homedir();
+        let mut args = vec![
             "--display-charset",
             "utf-8",
             "-utf8-strings",
@@ -115,22 +70,28 @@ impl Gpg {
             "--pinentry-mode",
             "loopback",
             "--homedir",
-            &homedir,
+            homedir,
         ];
         args.extend_from_slice(flags);
-        let env = [("GNUPGHOME", homedir.as_str())];
-        run_command(&args, stdin, &env)
+        let expr = cmd("gpg", &args)
+            .env("GNUPGHOME", homedir)
+            .stdout_capture()
+            .stderr_capture();
+        match stdin {
+            Some(data) => expr.stdin_bytes(data.to_vec()).run(),
+            None => expr.run(),
+        }
     }
 }
 
 impl Drop for Gpg {
     fn drop(&mut self) {
-        let _ = Command::new("gpgconf")
-            .args(["--kill", "gpg-agent"])
-            .env("GNUPGHOME", self.tmpdir.path())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let _ = cmd("gpgconf", &["--kill", "gpg-agent"])
+            .env("GNUPGHOME", self.homedir())
+            .stdout_null()
+            .stderr_null()
+            .unchecked()
+            .run();
     }
 }
 
@@ -160,36 +121,36 @@ fn parse_gpg_keys(raw: &[u8]) -> HashMap<String, Vec<String>> {
 
 // --- SSH keygen ---
 
-fn run_ssh_keygen(key_data: &[u8], passphrase: &str) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let mut f = NamedTempFile::new().expect("Failed to create temp file for ssh key");
-    f.write_all(key_data).expect("Failed to write ssh key");
-    f.flush().expect("Failed to flush ssh key");
+fn run_ssh_keygen(key_data: &[u8], passphrase: &str) -> io::Result<Output> {
+    let mut f = NamedTempFile::new()?;
+    f.write_all(key_data)?;
+    f.flush()?;
     let path = f.into_temp_path();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&*path, fs::Permissions::from_mode(0o700)).unwrap();
     }
-    let path_str = path.to_str().unwrap().to_string();
-    run_command(
-        &["ssh-keygen", "-v", "-y", "-P", passphrase, "-f", &path_str],
-        None,
-        &[],
+    let path_str = path.to_str().unwrap();
+    cmd(
+        "ssh-keygen",
+        &["-v", "-y", "-P", passphrase, "-f", path_str],
     )
+    .stdout_capture()
+    .stderr_capture()
+    .run()
 }
 
 // --- bip39key runner ---
 
-fn run_bip39key(
-    bip39: &[&str],
-    userid: &str,
-    flags: &[&str],
-) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let binary = env!("CARGO_BIN_EXE_bip39key").to_string();
-    let mut args = vec![binary.as_str(), "-u", userid];
+fn run_bip39key(bip39: &[&str], userid: &str, flags: &[&str]) -> io::Result<Output> {
+    let mut args = vec!["-u", userid];
     args.extend_from_slice(flags);
-    let stdin = bip39.join(" ");
-    run_command(&args, Some(stdin.as_bytes()), &[])
+    cmd(env!("CARGO_BIN_EXE_bip39key"), &args)
+        .stdin_bytes(bip39.join(" ").into_bytes())
+        .stdout_capture()
+        .stderr_capture()
+        .run()
 }
 
 // --- GPG import helper ---
@@ -235,10 +196,10 @@ fn check_key(keys: &HashMap<String, Vec<String>>, fp: &str, subfp: &str) {
 #[test]
 fn test_gpg_raw_xor() {
     let gpg = Gpg::new();
-    let (stdout, _) = run_bip39key(BIP39, &userid(), &["--algorithm", "xor"]).unwrap();
-    gpg_import(&gpg, &stdout, None, None);
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    let output = run_bip39key(BIP39, &userid(), &["--algorithm", "xor"]).unwrap();
+    gpg_import(&gpg, &output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     check_key(
         &keys,
         "A10531F7669DDD0FA50B0A00656C58480711970B",
@@ -249,10 +210,10 @@ fn test_gpg_raw_xor() {
 #[test]
 fn test_gpg_raw_hkdf() {
     let gpg = Gpg::new();
-    let (stdout, _) = run_bip39key(BIP39, &userid(), &["--algorithm", "hkdf"]).unwrap();
-    gpg_import(&gpg, &stdout, None, None);
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    let output = run_bip39key(BIP39, &userid(), &["--algorithm", "hkdf"]).unwrap();
+    gpg_import(&gpg, &output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     check_key(
         &keys,
         "67EAE06904766020FB5B41B314B8857D6EFD7E9F",
@@ -263,11 +224,10 @@ fn test_gpg_raw_hkdf() {
 #[test]
 fn test_gpg_public() {
     let gpg = Gpg::new();
-    let (stdout, _) =
-        run_bip39key(BIP39, &userid(), &["--public-key", "--algorithm", "xor"]).unwrap();
-    gpg_import(&gpg, &stdout, None, None);
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    let output = run_bip39key(BIP39, &userid(), &["--public-key", "--algorithm", "xor"]).unwrap();
+    gpg_import(&gpg, &output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     assert_eq!(keys["pub"][7], "ed25519");
     assert_eq!(
         keys["fpr"],
@@ -282,10 +242,10 @@ fn test_gpg_raw_with_file() {
     let f = NamedTempFile::new().unwrap();
     let path = f.path().to_str().unwrap().to_string();
     let temp_path = f.into_temp_path();
-    let (stdout, _) = run_bip39key(BIP39, &userid(), &["-o", &path, "--algorithm", "xor"]).unwrap();
-    gpg_import(&gpg, &stdout, Some(&path), None);
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    let output = run_bip39key(BIP39, &userid(), &["-o", &path, "--algorithm", "xor"]).unwrap();
+    gpg_import(&gpg, &output.stdout, Some(&path), None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     check_key(
         &keys,
         "A10531F7669DDD0FA50B0A00656C58480711970B",
@@ -297,10 +257,10 @@ fn test_gpg_raw_with_file() {
 #[test]
 fn test_gpg_armor() {
     let gpg = Gpg::new();
-    let (stdout, _) = run_bip39key(BIP39, &userid(), &["-a", "--algorithm", "xor"]).unwrap();
-    gpg_import(&gpg, &stdout, None, None);
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    let output = run_bip39key(BIP39, &userid(), &["-a", "--algorithm", "xor"]).unwrap();
+    gpg_import(&gpg, &output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     check_key(
         &keys,
         "A10531F7669DDD0FA50B0A00656C58480711970B",
@@ -311,15 +271,15 @@ fn test_gpg_armor() {
 #[test]
 fn test_electrum() {
     let gpg = Gpg::new();
-    let (stdout, _) = run_bip39key(
+    let output = run_bip39key(
         ELECTRUM,
         &userid(),
         &["-s", "electrum", "--algorithm", "xor"],
     )
     .unwrap();
-    gpg_import(&gpg, &stdout, None, None);
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    gpg_import(&gpg, &output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     check_key(
         &keys,
         "384CC65ACAD3BECE74FFF34391BA6BD773B77C9E",
@@ -330,10 +290,10 @@ fn test_electrum() {
 #[test]
 fn test_gpg_import_with_passphrase() {
     let gpg = Gpg::new();
-    let (stdout, _) = run_bip39key(BIP39, &userid(), &["-p", PASS, "--algorithm", "xor"]).unwrap();
-    gpg_import(&gpg, &stdout, None, Some(PASS));
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    let output = run_bip39key(BIP39, &userid(), &["-p", PASS, "--algorithm", "xor"]).unwrap();
+    gpg_import(&gpg, &output.stdout, None, Some(PASS));
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     check_key(
         &keys,
         "973FB9F6845B59C12544D62695C556EA825BA259",
@@ -343,17 +303,16 @@ fn test_gpg_import_with_passphrase() {
 
 #[test]
 fn test_ssh_xor() {
-    let (secretkey, _) =
-        run_bip39key(BIP39, &userid(), &["-f", "ssh", "--algorithm", "xor"]).unwrap();
-    let (keygenpub, _) = run_ssh_keygen(&secretkey, "").unwrap();
-    let (bip39pub, _) = run_bip39key(
+    let secretkey = run_bip39key(BIP39, &userid(), &["-f", "ssh", "--algorithm", "xor"]).unwrap();
+    let keygenpub = run_ssh_keygen(&secretkey.stdout, "").unwrap();
+    let bip39pub = run_bip39key(
         BIP39,
         &userid(),
         &["-f", "ssh", "--public-key", "--algorithm", "xor"],
     )
     .unwrap();
-    let lhs = String::from_utf8_lossy(&keygenpub);
-    let rhs = String::from_utf8_lossy(&bip39pub);
+    let lhs = String::from_utf8_lossy(&keygenpub.stdout);
+    let rhs = String::from_utf8_lossy(&bip39pub.stdout);
     let lhs = lhs.trim();
     let rhs = rhs.trim();
     assert!(lhs.starts_with(rhs), "{} vs {}", lhs, rhs);
@@ -361,11 +320,11 @@ fn test_ssh_xor() {
 
 #[test]
 fn test_ssh_hkdf() {
-    let (secretkey, _) = run_bip39key(BIP39, &userid(), &["-f", "ssh"]).unwrap();
-    let (keygenpub, _) = run_ssh_keygen(&secretkey, "").unwrap();
-    let (bip39pub, _) = run_bip39key(BIP39, &userid(), &["-f", "ssh", "--public-key"]).unwrap();
-    let lhs = String::from_utf8_lossy(&keygenpub);
-    let rhs = String::from_utf8_lossy(&bip39pub);
+    let secretkey = run_bip39key(BIP39, &userid(), &["-f", "ssh"]).unwrap();
+    let keygenpub = run_ssh_keygen(&secretkey.stdout, "").unwrap();
+    let bip39pub = run_bip39key(BIP39, &userid(), &["-f", "ssh", "--public-key"]).unwrap();
+    let lhs = String::from_utf8_lossy(&keygenpub.stdout);
+    let rhs = String::from_utf8_lossy(&bip39pub.stdout);
     let lhs = lhs.trim();
     let rhs = rhs.trim();
     assert!(lhs.starts_with(rhs), "{} vs {}", lhs, rhs);
@@ -387,10 +346,10 @@ fn test_bad_bip39_checksum() {
 
 #[test]
 fn test_gpg_import_with_passphrase_fails() {
-    let (stdout, _) = run_bip39key(BIP39, &userid(), &["-p", PASS, "--algorithm", "xor"]).unwrap();
+    let output = run_bip39key(BIP39, &userid(), &["-p", PASS, "--algorithm", "xor"]).unwrap();
     let gpg = Gpg::new();
     let keyfile = PathBuf::from(gpg.homedir()).join("key.gpg");
-    fs::write(&keyfile, &stdout).unwrap();
+    fs::write(&keyfile, &output.stdout).unwrap();
     let keyfile_str = keyfile.to_str().unwrap().to_string();
     let result = gpg.run(
         &[
@@ -409,14 +368,14 @@ fn test_gpg_import_with_passphrase_fails() {
 
 #[test]
 fn test_ssh_with_passphrase() {
-    let (stdout, _) = run_bip39key(
+    let output = run_bip39key(
         BIP39,
         &userid(),
         &["-f", "ssh", "-p", PASS, "--algorithm", "xor"],
     )
     .unwrap();
-    run_ssh_keygen(&stdout, PASS).unwrap();
-    let result = run_ssh_keygen(&stdout, "badpassword");
+    run_ssh_keygen(&output.stdout, PASS).unwrap();
+    let result = run_ssh_keygen(&output.stdout, "badpassword");
     assert!(
         result.is_err(),
         "ssh-keygen with wrong passphrase should fail"
@@ -431,12 +390,12 @@ fn test_golden_with_passphrase() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) = run_bip39key(&bip39, uid, &["-p", password, "--algorithm", "xor"]).unwrap();
+    let output = run_bip39key(&bip39, uid, &["-p", password, "--algorithm", "xor"]).unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
+    gpg_import(&gpg, &output.stdout, None, Some(password));
     let gpg_file = golden_path("message-with-passphrase.gpg");
     let gpg_file_str = gpg_file.to_str().unwrap().to_string();
-    let (message, _) = gpg
+    let message = gpg
         .run(
             &[
                 "--passphrase",
@@ -449,7 +408,7 @@ fn test_golden_with_passphrase() {
             None,
         )
         .unwrap();
-    assert_eq!(message, b"Secret message\n");
+    assert_eq!(message.stdout, b"Secret message\n");
 }
 
 #[test]
@@ -459,13 +418,13 @@ fn test_golden_without_passphrase() {
             .split(' ')
             .collect();
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) = run_bip39key(&bip39, uid, &["--algorithm", "xor"]).unwrap();
+    let output = run_bip39key(&bip39, uid, &["--algorithm", "xor"]).unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, None);
+    gpg_import(&gpg, &output.stdout, None, None);
     let gpg_file = golden_path("message-without-passphrase.gpg");
     let gpg_file_str = gpg_file.to_str().unwrap().to_string();
-    let (message, _) = gpg.run(&["--decrypt", &gpg_file_str], None).unwrap();
-    assert_eq!(message, b"Secret message!!\n");
+    let message = gpg.run(&["--decrypt", &gpg_file_str], None).unwrap();
+    assert_eq!(message.stdout, b"Secret message!!\n");
 }
 
 #[test]
@@ -476,13 +435,12 @@ fn test_golden_concatenated() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) =
-        run_bip39key(&bip39, uid, &["--algorithm", "concat", "-p", password]).unwrap();
+    let output = run_bip39key(&bip39, uid, &["--algorithm", "concat", "-p", password]).unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
+    gpg_import(&gpg, &output.stdout, None, Some(password));
     let gpg_file = golden_path("message-concatenated.gpg");
     let gpg_file_str = gpg_file.to_str().unwrap().to_string();
-    let (message, _) = gpg
+    let message = gpg
         .run(
             &[
                 "--passphrase",
@@ -495,7 +453,7 @@ fn test_golden_concatenated() {
             None,
         )
         .unwrap();
-    assert_eq!(message, b"Secret message!!\n");
+    assert_eq!(message.stdout, b"Secret message!!\n");
 }
 
 #[test]
@@ -506,17 +464,17 @@ fn test_golden_electrum() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) = run_bip39key(
+    let output = run_bip39key(
         &electrum,
         uid,
         &["-p", password, "-s", "electrum", "--algorithm", "xor"],
     )
     .unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
+    gpg_import(&gpg, &output.stdout, None, Some(password));
     let gpg_file = golden_path("message-electrum.gpg");
     let gpg_file_str = gpg_file.to_str().unwrap().to_string();
-    let (message, _) = gpg
+    let message = gpg
         .run(
             &[
                 "--passphrase",
@@ -529,7 +487,7 @@ fn test_golden_electrum() {
             None,
         )
         .unwrap();
-    assert_eq!(message, b"Secret message!!\n");
+    assert_eq!(message.stdout, b"Secret message!!\n");
 }
 
 #[test]
@@ -540,17 +498,17 @@ fn test_golden_electrum_concatenated() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) = run_bip39key(
+    let output = run_bip39key(
         &electrum,
         uid,
         &["--algorithm", "concat", "-p", password, "-s", "electrum"],
     )
     .unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
+    gpg_import(&gpg, &output.stdout, None, Some(password));
     let gpg_file = golden_path("message-electrum-concatenated.gpg");
     let gpg_file_str = gpg_file.to_str().unwrap().to_string();
-    let (message, _) = gpg
+    let message = gpg
         .run(
             &[
                 "--passphrase",
@@ -563,7 +521,7 @@ fn test_golden_electrum_concatenated() {
             None,
         )
         .unwrap();
-    assert_eq!(message, b"Secret message!!\n");
+    assert_eq!(message.stdout, b"Secret message!!\n");
 }
 
 #[test]
@@ -574,12 +532,12 @@ fn test_from_prompt() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) = run_bip39key(&bip39, uid, &["-p", password, "--algorithm", "xor"]).unwrap();
+    let output = run_bip39key(&bip39, uid, &["-p", password, "--algorithm", "xor"]).unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
+    gpg_import(&gpg, &output.stdout, None, Some(password));
     let gpg_file = golden_path("message-prompt.gpg");
     let gpg_file_str = gpg_file.to_str().unwrap().to_string();
-    let (message, _) = gpg
+    let message = gpg
         .run(
             &[
                 "--passphrase",
@@ -592,7 +550,7 @@ fn test_from_prompt() {
             None,
         )
         .unwrap();
-    assert_eq!(message, b"Secret message!!\n");
+    assert_eq!(message.stdout, b"Secret message!!\n");
 }
 
 #[test]
@@ -603,7 +561,7 @@ fn test_custom_timestamps() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) = run_bip39key(
+    let output = run_bip39key(
         &bip39,
         uid,
         &[
@@ -619,9 +577,9 @@ fn test_custom_timestamps() {
     )
     .unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    gpg_import(&gpg, &output.stdout, None, Some(password));
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     assert_eq!(keys["pub"][4], "1744948062");
     assert_eq!(keys["pub"][5], "1745554397");
 }
@@ -634,16 +592,16 @@ fn test_authentication() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) = run_bip39key(
+    let output = run_bip39key(
         &bip39,
         uid,
         &["-p", password, "--algorithm", "concat", "-b"],
     )
     .unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
-    let (keysout, _) = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
-    let keys = parse_gpg_keys(&keysout);
+    gpg_import(&gpg, &output.stdout, None, Some(password));
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
     assert!(
         keys["pub"][6].contains('a'),
         "Expected authentication capability in pub key capabilities: {}",
@@ -659,13 +617,12 @@ fn test_no_passphrase() {
             .collect();
     let password = "magic-password";
     let uid = "Integration Test <integration@test.com>";
-    let (stdout, _) =
-        run_bip39key(&bip39, uid, &["-p", password, "-n", "--algorithm", "xor"]).unwrap();
+    let output = run_bip39key(&bip39, uid, &["-p", password, "-n", "--algorithm", "xor"]).unwrap();
     let gpg = Gpg::new();
-    gpg_import(&gpg, &stdout, None, Some(password));
+    gpg_import(&gpg, &output.stdout, None, Some(password));
     let gpg_file = golden_path("message-no-passphrase.gpg");
     let gpg_file_str = gpg_file.to_str().unwrap().to_string();
-    let (message, _) = gpg
+    let message = gpg
         .run(
             &[
                 "--passphrase",
@@ -678,5 +635,5 @@ fn test_no_passphrase() {
             None,
         )
         .unwrap();
-    assert_eq!(message, b"Secret message!\n");
+    assert_eq!(message.stdout, b"Secret message!\n");
 }
