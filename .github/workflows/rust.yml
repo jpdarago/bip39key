@@ -99,27 +99,8 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Run cargo build
+      - name: Run integration tests
         uses: actions-rs/cargo@v1
         with:
-          command: build
-          args: --release
-
-      - name: Setup Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: 3.12
-
-      - name: Install Python deps
-        run: |
-          pip install pipenv
-          pipenv install
-
-      - name: Run tests on Windows
-        if: matrix.os == 'windows-latest'
-        run: |
-          pipenv run python .\test\test.py
-
-      - name: Run tests on Linux and Macos
-        if: matrix.os != 'windows-latest'
-        run: pipenv run python ./test/test.py
+          command: test
+          args: --release --test integration

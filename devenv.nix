@@ -8,7 +8,6 @@
     gnupg
     openssh
     pgpdump
-    python314
     rust-analyzer
     rustc
     rustfmt
@@ -20,13 +19,10 @@
   env.RUST_BACKTRACE = "1";
 
   languages = {
-    python.enable = true;
     rust.enable = true;
   };
 
   git-hooks.hooks = {
-
-    black.enable = true;
 
     rustfmt = {
       enable = true;
@@ -45,6 +41,6 @@
   };
 
   enterTest = ''
-    ${pkgs.python3}/bin/python3 test/test.py
+    cargo test --release --test integration
   '';
 }
