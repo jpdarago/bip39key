@@ -30,4 +30,5 @@ tiny-bip39 = "1.0.0"
 x25519-dalek = { version = "2.0.0-rc3", features = ["static_secrets"] }
 
 [dev-dependencies]
+duct = "1"
 tempfile = "3"
