@@ -636,3 +636,46 @@ fn test_no_passphrase() {
         .unwrap();
     assert_eq!(message.stdout, b"Secret message!\n");
 }
+
+#[test]
+fn test_default_algorithm_is_xor() {
+    let gpg = Gpg::new();
+    let output = run_bip39key(BIP39, &userid(), &[]).unwrap();
+    gpg.import(&output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let keys = parse_gpg_keys(&keysout.stdout);
+    check_key(
+        &keys,
+        "A10531F7669DDD0FA50B0A00656C58480711970B",
+        "656C58480711970B",
+    );
+}
+
+#[test]
+fn test_concat_flag_backwards_compat() {
+    let bip39: Vec<&str> =
+        "fatigue mosquito exclude vessel reward slight protect purity language hat anger pen"
+            .split(' ')
+            .collect();
+    let password = "magic-password";
+    let uid = "Integration Test <integration@test.com>";
+    let output = run_bip39key(&bip39, uid, &["-c", "-p", password]).unwrap();
+    let gpg = Gpg::new();
+    gpg.import(&output.stdout, None, Some(password));
+    let gpg_file = golden_path("message-concatenated.gpg");
+    let gpg_file_str = gpg_file.to_str().unwrap().to_string();
+    let message = gpg
+        .run(
+            &[
+                "--passphrase",
+                password,
+                "--pinentry-mode",
+                "loopback",
+                "--decrypt",
+                &gpg_file_str,
+            ],
+            None,
+        )
+        .unwrap();
+    assert_eq!(message.stdout, b"Secret message!!\n");
+}
