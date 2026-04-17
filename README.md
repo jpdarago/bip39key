@@ -134,10 +134,16 @@ then pass the `--skip-passphrase-for-key-material/-n` option.
 > 128 bits of entropy and Argon2id's computational cost, both `concat` and
 > `hkdf` avoid this issue entirely.
 
-## Running tests.
+## Running tests
 
-This project uses the https://nixos.org/ package manager with https://devenv.sh, 
-once you install those you can run the tests with `devenv test`.
+Tests are Rust integration tests that exercise the binary end-to-end against GPG
+and ssh-keygen. They require `gpg` and `ssh-keygen` to be installed.
+
+```bash
+cargo test --release --test integration
+```
+
+If using [Nix](https://nixos.org/) with [devenv](https://devenv.sh), you can also run `devenv test`.
 
 ## Acknowledgements
 

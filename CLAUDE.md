@@ -11,19 +11,19 @@ bip39key generates deterministic OpenPGP (EdDSA/ECDH Curve25519) and OpenSSH (Ed
 This project uses [Nix](https://nixos.org/) with [devenv](https://devenv.sh/) for development tooling. Enter the dev environment with `devenv shell`.
 
 ```bash
-cargo build --release       # Build release binary (required before tests)
-cargo clippy -- -D warnings # Lint
-cargo fmt --all -- --check  # Format check
-cargo fmt                   # Auto-format
-devenv test                 # Run integration tests (builds release + runs test/test.py)
-python3 test/test.py        # Run integration tests directly (requires release build)
+cargo build --release                    # Build release binary
+cargo clippy -- -D warnings              # Lint
+cargo fmt --all -- --check               # Format check
+cargo fmt                                # Auto-format
+cargo test --release --test integration  # Run integration tests
+devenv test                              # Run integration tests (via devenv)
 ```
 
-There are no Rust unit tests. All tests are integration tests in `test/test.py` (Python/unittest) that build the release binary, then exercise it end-to-end against GPG and ssh-keygen. Golden test files (`test/message-*.gpg`) contain encrypted messages that must decrypt correctly with known seed/passphrase combos.
+There are no Rust unit tests. All tests are integration tests in `tests/integration.rs` that exercise the binary end-to-end against GPG and ssh-keygen. Golden test files (`test/message-*.gpg`) contain encrypted messages that must decrypt correctly with known seed/passphrase combos.
 
 ## Pre-commit Hooks
 
-devenv configures git hooks for `rustfmt`, `clippy`, and `black` (Python formatter).
+devenv configures git hooks for `rustfmt` and `clippy`.
 
 ## Architecture
 
