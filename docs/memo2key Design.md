@@ -146,13 +146,41 @@ The receipt is delivered as a self-contained HTML file, generated automatically 
 
 ### What the HTML contains
 
+The receipt is a complete disaster recovery document. Someone finding this file years later — even without prior context — should be able to regenerate the key.
+
+#### Core data
+
 - **The receipt string** in large monospace text
 - **A QR code** (inline SVG) encoding the receipt string
-- **Human-readable summary** of what each field means and what parameters are pinned by the version
 - **Key fingerprint** for the generated key
+
+#### Human-readable parameter summary
+
+- What each receipt field means
+- What parameters are pinned by the version number (Argon2id settings, HKDF info strings, key structure)
+- If subkeys have been cycled: prominent banner showing the current subkey generation index
+
+#### Recovery instructions
+
 - **Recovery command** — the exact `memo2key generate --from-receipt <file>` invocation needed to regenerate the key
 - **Verify command** — a copy-pasteable `memo2key verify --from-receipt <file>` with the fingerprint pre-filled, so the user can test their backup immediately
-- **Generation date** for the user's reference (not part of the receipt, not used in derivation)
+- **Step-by-step recovery walkthrough** — numbered instructions: (1) install memo2key, (2) run the recovery command, (3) enter mnemonic, (4) enter passphrase (if applicable), (5) verify fingerprint, (6) import to Yubikey/keyring
+- **What you'll need** — checklist of what's required for recovery (this file, the mnemonic, the passphrase if `withpass`)
+
+#### Provenance and reproducibility
+
+- **memo2key version** — semver of the tool that generated this receipt (e.g., `2.0.0`)
+- **memo2key commit hash** — exact git commit, so the user can build the same binary from source
+- **Binary SHA-256** — hash of the `memo2key` binary that generated this receipt, per target architecture
+- **Target triple** — the architecture this binary was built for (e.g., `x86_64-unknown-linux-gnu`)
+- **Generation date** — when the key was generated (for the user's reference, not used in derivation)
+- **Source repository URL** — where to find the source code and documentation
+- **Reproducible build command** — the exact Nix command to rebuild the binary and verify the hash:
+  ```
+  nix build github:<owner>/memo2key/<commit>#memo2key
+  sha256sum result/bin/memo2key
+  ```
+- **Fallback build instructions** — for users without Nix: install the pinned Rust toolchain (from `rust-toolchain.toml`), clone the repo at the commit, and `cargo build --release`
 
 ### What the HTML does NOT contain
 
@@ -276,6 +304,16 @@ $ memo2key generate --from-receipt key-receipt.html --cycle-subkeys -o key-new.g
 ```
 
 The primary key fingerprint never changes. Contacts don't need to re-verify the identity. The new receipt replaces the old one.
+
+### Backup implications
+
+Subkey cycling does not weaken the backup story:
+
+- The **certification key** (your identity) has no index. It is recoverable from *any* receipt, regardless of which subkey generation it was issued for.
+- If the user loses the latest receipt but has an older one, they can still recover their identity and cycle forward again.
+- Fingerprint verification catches "wrong receipt" mistakes — the cert key fingerprint is the same across all generations, but the HTML receipt also records subkey fingerprints.
+
+The risk is a **stale receipt**: the user cycles subkeys but forgets to replace the backed-up receipt. To mitigate this, the HTML receipt shows a **prominent banner** when subkeys have been cycled (e.g., "Subkey generation: 1 — this receipt supersedes the original"). The generation date in the receipt also helps the user identify which is newest.
 
 ### Receipt
 
@@ -522,6 +560,69 @@ Decodes a receipt and prints a human-readable summary. Validates the checksum.
 | No verify command | `verify` is a core subcommand |
 | PGP and SSH only | PGP, SSH, and age |
 | Same repo, same binary name | Separate repo, new name |
+
+---
+
+## Reproducible Builds
+
+The receipt includes the binary hash so the user can verify they're running the exact same tool that originally generated the key. This closes a trust gap: without it, the user trusts that whatever `memo2key` binary they downloaded is correct. With it, they can build from source and compare.
+
+### How it works
+
+memo2key uses Nix for reproducible builds. The flake.lock pins nixpkgs (and therefore the exact Rust toolchain), so `nix build` at a given commit produces a bit-identical binary on the same architecture.
+
+At build time, the binary embeds:
+- Its own git commit hash (via `env!` or build script)
+- The expected binary SHA-256 for each supported target (populated by CI/release process)
+
+At key generation time, the receipt records:
+- The commit hash
+- The SHA-256 of the running binary
+- The target triple (e.g., `x86_64-unknown-linux-gnu`)
+
+### Verification workflow
+
+```
+# 1. Read the receipt — it shows the commit and expected hash
+$ memo2key receipt key-receipt.html
+...
+Built from: github:<owner>/memo2key/a1b2c3d
+Binary SHA-256 (x86_64-unknown-linux-gnu): 3a7f9e...
+Reproduce:
+  nix build github:<owner>/memo2key/a1b2c3d#memo2key
+  sha256sum result/bin/memo2key
+
+# 2. Build from source at that exact commit
+$ nix build github:<owner>/memo2key/a1b2c3d#memo2key
+
+# 3. Verify the hash matches
+$ sha256sum result/bin/memo2key
+3a7f9e...  result/bin/memo2key  ✓
+```
+
+### What makes this reproducible
+
+| Layer | Pinned by |
+|---|---|
+| Rust toolchain version | nixpkgs revision in `flake.lock` |
+| All crate dependencies | `Cargo.lock` |
+| System libraries (libc, etc.) | nixpkgs revision in `flake.lock` |
+| Build flags and environment | `flake.nix` build derivation |
+
+### Cross-architecture
+
+Different architectures produce different binaries. The receipt records the target triple so the user knows which architecture to build for. A single release may publish hashes for multiple targets (e.g., `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`).
+
+### Without Nix (best-effort)
+
+For users who can't or won't use Nix:
+
+1. Clone the repo at the commit shown in the receipt
+2. Install the exact Rust toolchain from `rust-toolchain.toml`
+3. `cargo build --release`
+4. Compare the hash — it *should* match but isn't guaranteed (different libc, linker, system headers)
+
+The receipt includes these instructions as a fallback but notes that Nix is the only guaranteed-reproducible path.
 
 ---
 
