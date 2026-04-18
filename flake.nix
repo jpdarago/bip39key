@@ -1,7 +1,7 @@
 {
   description = "Nix flake for bip39key";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
 
   outputs = { self, nixpkgs }:
   let
@@ -12,17 +12,29 @@
         inherit system;
       }
     );
+
+    muslTarget = system: {
+      "x86_64-linux"  = "x86_64-unknown-linux-musl";
+      "aarch64-linux" = "aarch64-unknown-linux-musl";
+    }.${system};
+
   in {
     packages = forAllSystems ({ pkgs, system }: {
-      bip39key = pkgs.rustPlatform.buildRustPackage rec {
+      # Static musl build (reproducible, portable)
+      bip39key = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
         pname = "bip39key";
-        version = "1.4.4";
+        version = "1.5.1";
 
         src = ./.;
 
         cargoLock.lockFile = ./Cargo.lock;
 
+        # Integration tests need gpg and ssh-keygen
         doCheck = true;
+        nativeCheckInputs = with pkgs; [
+          gnupg
+          openssh
+        ];
 
         meta = with pkgs.lib; {
           description = "Generate an OpenPGP/OpenSSH key from a BIP39 mnemonic";
