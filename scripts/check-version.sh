@@ -16,7 +16,11 @@ if [ "$CARGO_TOML_VERSION" != "$CARGO_LOCK_VERSION" ]; then
     errors=1
 fi
 
-if [ "$LATEST_TAG" = "no tags" ]; then
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+
+if [ "$CURRENT_BRANCH" != "main" ] && [ "$CURRENT_BRANCH" != "master" ]; then
+    echo "INFO: Skipping tag check on branch '$CURRENT_BRANCH'"
+elif [ "$LATEST_TAG" = "no tags" ]; then
     echo "WARNING: No git tags found, skipping tag check"
 elif [ "$CARGO_TOML_VERSION" != "$TAG_VERSION" ]; then
     echo "MISMATCH: Cargo.toml ($CARGO_TOML_VERSION) != latest tag ($LATEST_TAG)"
