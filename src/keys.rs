@@ -43,13 +43,6 @@ pub struct EncryptKey {
     pub expiration_timestamp_secs: Option<i64>,
 }
 
-pub struct AuthKey {
-    pub public_key: [u8; ed25519_dalek::PUBLIC_KEY_LENGTH],
-    pub private_key: [u8; ed25519_dalek::SECRET_KEY_LENGTH],
-    pub creation_timestamp_secs: i64,
-    pub expiration_timestamp_secs: Option<i64>,
-}
-
 impl EncryptKey {
     pub fn new(
         secret_key_bytes: &[u8],
@@ -74,29 +67,10 @@ impl EncryptKey {
     }
 }
 
-impl AuthKey {
-    pub fn new(
-        secret_key_bytes: &[u8],
-        creation_timestamp_secs: i64,
-        expiration_timestamp_secs: Option<i64>,
-    ) -> Result<AuthKey> {
-        let mut input = [0u8; 32];
-        input.copy_from_slice(secret_key_bytes);
-        let secret_key = ed25519_dalek::SigningKey::from_bytes(&input);
-        Ok(AuthKey {
-            creation_timestamp_secs,
-            expiration_timestamp_secs,
-            public_key: secret_key.verifying_key().to_bytes(),
-            private_key: secret_key.to_bytes(),
-        })
-    }
-}
-
 pub struct Keys {
     pub user_id: UserId,
     pub sign_key: SignKey,
     pub encrypt_key: Option<EncryptKey>,
-    pub auth_key: Option<AuthKey>,
     pub passphrase: Option<String>,
 }
 
@@ -148,7 +122,6 @@ pub struct KeySettings {
     pub creation_timestamp_secs: i64,
     pub expiration_timestamp_secs: Option<i64>,
     pub generate_encrypt_key: bool,
-    pub generate_auth_key: bool,
     pub use_rfc9106_settings: bool,
     pub use_authorization_for_sign_key: bool,
 }
@@ -174,7 +147,6 @@ impl Keys {
             } else {
                 None
             },
-            auth_key: None,
             passphrase: settings.passphrase,
         })
     }
@@ -183,9 +155,6 @@ impl Keys {
     /// The Argon2id output is used as PRK, and separate info strings produce
     /// independent sign and encrypt key material.
     pub fn new_with_hkdf(settings: KeySettings) -> Result<Keys> {
-        let generate_auth_key = settings.generate_auth_key;
-        let creation_timestamp_secs = settings.creation_timestamp_secs;
-        let expiration_timestamp_secs = settings.expiration_timestamp_secs;
         let prk = if let Some(pass) = &settings.passphrase {
             let mut bytes = settings.seed.to_vec();
             bytes.extend_from_slice(pass.as_bytes());
@@ -201,16 +170,7 @@ impl Keys {
         let encrypt_key_bytes = hkdf_expand(&prk, b"bip39key-encrypt-v1", 32)?;
         let mut secret_key_bytes = sign_key_bytes;
         secret_key_bytes.extend_from_slice(&encrypt_key_bytes);
-        let mut keys = Self::build_keys(&secret_key_bytes, settings)?;
-        if generate_auth_key {
-            let auth_key_bytes = hkdf_expand(&prk, b"bip39key-auth-v1", 32)?;
-            keys.auth_key = Some(AuthKey::new(
-                &auth_key_bytes,
-                creation_timestamp_secs,
-                expiration_timestamp_secs,
-            )?);
-        }
-        Ok(keys)
+        Self::build_keys(&secret_key_bytes, settings)
     }
 
     pub fn new_with_concat(settings: KeySettings) -> Result<Keys> {

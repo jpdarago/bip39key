@@ -11,7 +11,7 @@ use std::io::Write;
 type Aes256Cfb = cfb_mode::Encryptor<aes::Aes256>;
 
 pub enum PacketType {
-    PrivateSubkey,
+    PrivateEncryptSubkey,
     PrivateSignKey,
     PublicSignKey,
     PublicSubKey,
@@ -43,7 +43,7 @@ fn output_as_packet(
 ) -> Result<()> {
     let type_byte: u8 = 0xc0
         | match packet_type {
-            PacketType::PrivateSubkey => 7,
+            PacketType::PrivateEncryptSubkey => 7,
             PacketType::PrivateSignKey => 5,
             PacketType::PublicSignKey => 6,
             PacketType::PublicSubKey => 14,
@@ -176,7 +176,7 @@ fn output_unencrypted_secret_subkey(key: &EncryptKey, out: &mut ByteCursor) -> R
     let mpi_key = mpi_encode(&reverse_secret_key);
     cursor.write_all(&mpi_key)?;
     cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
-    output_as_packet(PacketType::PrivateSubkey, cursor.get_ref(), out)
+    output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
 fn output_encrypted_secret_subkey(
@@ -192,112 +192,7 @@ fn output_encrypted_secret_subkey(
     let mut reverse_secret_key = key.private_key;
     reverse_secret_key.reverse();
     s2k_encrypt(&reverse_secret_key, passphrase, &mut cursor)?;
-    output_as_packet(PacketType::PrivateSubkey, cursor.get_ref(), out)
-}
-
-fn public_auth_subkey_payload(key: &AuthKey) -> Result<Vec<u8>> {
-    let mut cursor = ByteCursor::new(Vec::with_capacity(256));
-    cursor.write_all(&[0x04])?; // Version 4.
-    cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
-    cursor.write_all(&[22])?; // Algorithm, EdDSA
-    let oid: [u8; 9] = [0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01]; // EdDSA OID
-    cursor.write_all(&[oid.len().try_into()?])?;
-    cursor.write_all(&oid)?;
-    cursor.write_u16::<BigEndian>(263)?;
-    cursor.write_all(&[0x40])?;
-    cursor.write_all(&key.public_key)?;
-    Ok(cursor.into_inner())
-}
-
-fn output_public_auth_subkey(key: &AuthKey, cursor: &mut ByteCursor) -> Result<()> {
-    let payload = public_auth_subkey_payload(key)?;
-    output_as_packet(PacketType::PublicSubKey, &payload, cursor)
-}
-
-fn output_unencrypted_secret_auth_subkey(key: &AuthKey, out: &mut ByteCursor) -> Result<()> {
-    let mut cursor = ByteCursor::new(Vec::with_capacity(256));
-    let payload = public_auth_subkey_payload(key)?;
-    cursor.write_all(&payload)?;
-    // S2K unencrypted i.e. without passphrase protection.
-    cursor.write_all(&[0])?;
-    let mpi_key = mpi_encode(&key.private_key);
-    cursor.write_all(&mpi_key)?;
-    cursor.write_u16::<BigEndian>(checksum(&mpi_key))?;
-    output_as_packet(PacketType::PrivateSubkey, cursor.get_ref(), out)
-}
-
-fn output_encrypted_secret_auth_subkey(
-    key: &AuthKey,
-    passphrase: &str,
-    out: &mut ByteCursor,
-) -> Result<()> {
-    let mut cursor = ByteCursor::new(Vec::with_capacity(256));
-    let payload = public_auth_subkey_payload(key)?;
-    cursor.write_all(&payload)?;
-    s2k_encrypt(&key.private_key, passphrase, &mut cursor)?;
-    output_as_packet(PacketType::PrivateSubkey, cursor.get_ref(), out)
-}
-
-fn output_auth_subkey_signature(
-    key: &SignKey,
-    auth_key: &AuthKey,
-    out: &mut ByteCursor,
-) -> Result<()> {
-    let mut packet_cursor = ByteCursor::new(Vec::with_capacity(256));
-    // Version 4 signature.
-    // Subkey binding signature (0x18).
-    // EdDSA signature (22), SHA-256 hash (8).
-    packet_cursor.write_all(&[0x04, 0x18, 22, 8])?;
-    // Write subpackets to a buffer.
-    // Signature creation time subpacket (2), 5 bytes.
-    let mut subpacket_cursor = ByteCursor::new(Vec::with_capacity(256));
-    subpacket_cursor.write_all(&[5, 2])?;
-    subpacket_cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
-    // Expiration time in seconds (3), if provided.
-    if let Some(expiration_time_secs) = auth_key.expiration_timestamp_secs {
-        subpacket_cursor.write_all(&[5, 3])?;
-        let expiration_delta_secs = expiration_time_secs - auth_key.creation_timestamp_secs;
-        subpacket_cursor.write_u32::<BigEndian>(expiration_delta_secs.try_into().unwrap())?;
-    }
-    // Issuer subpacket (16), signature key id.
-    let key_fp = key_fingerprint(key)?;
-    subpacket_cursor.write_all(&[9, 16])?;
-    subpacket_cursor.write_all(&key_fp[12..20])?;
-    // Issuer fingerprint (33), version 4.
-    subpacket_cursor.write_all(&[22, 33, 4])?;
-    subpacket_cursor.write_all(&key_fp)?;
-    // Key Flags (27) subpacket (authentication).
-    subpacket_cursor.write_all(&[2, 27, 0x20])?;
-    // Trust signature: 120 for complete trust.
-    subpacket_cursor.write_all(&[3, 5, 0, 120])?;
-    // Write subpackets into the hashed subpacket area.
-    let subpackets = subpacket_cursor.get_ref();
-    packet_cursor.write_u16::<BigEndian>(subpackets.len() as u16)?;
-    packet_cursor.write_all(subpackets)?;
-    // Compute total hash of the public key + auth public key + subpackets + trailer.
-    let mut hasher = sha2::Sha256::new();
-    let sign_public_key = public_key_payload(key)?;
-    hasher.update([0x99]);
-    hash_u16(sign_public_key.len().try_into()?, &mut hasher);
-    hasher.update(&sign_public_key);
-    let auth_public_key = public_auth_subkey_payload(auth_key)?;
-    hasher.update([0x99]);
-    hash_u16(auth_public_key.len().try_into()?, &mut hasher);
-    hasher.update(&auth_public_key);
-    let packet = packet_cursor.get_ref();
-    hasher.update(packet);
-    hasher.update([0x04, 0xFF]);
-    hash_u32(packet.len().try_into()?, &mut hasher);
-    let hash = hasher.finalize();
-    // Sign the hash.
-    let signature = key.signing_key.sign(&hash).to_bytes();
-    // No unhashed subpackets.
-    packet_cursor.write_u16::<BigEndian>(0)?;
-    // Push the signature of the hash.
-    packet_cursor.write_all(&hash[..2])?;
-    packet_cursor.write_all(&mpi_encode(&signature[..32]))?;
-    packet_cursor.write_all(&mpi_encode(&signature[32..]))?;
-    output_as_packet(PacketType::Signature, packet_cursor.get_ref(), out)
+    output_as_packet(PacketType::PrivateEncryptSubkey, cursor.get_ref(), out)
 }
 
 fn public_key_payload(key: &SignKey) -> Result<Vec<u8>> {
@@ -503,14 +398,6 @@ pub fn output_as_packets<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>)
         }
         output_subkey_signature(&keys.sign_key, encrypt_key, &mut buffer)?;
     }
-    if let Some(auth_key) = &keys.auth_key {
-        if let Some(passphrase) = &keys.passphrase {
-            output_encrypted_secret_auth_subkey(auth_key, passphrase, &mut buffer)?;
-        } else {
-            output_unencrypted_secret_auth_subkey(auth_key, &mut buffer)?;
-        }
-        output_auth_subkey_signature(&keys.sign_key, auth_key, &mut buffer)?;
-    }
     out.write_all(buffer.get_ref())?;
     Ok(())
 }
@@ -584,10 +471,6 @@ pub fn output_public_as_packets<W: Write>(
     if let Some(encrypt_key) = &keys.encrypt_key {
         output_public_subkey(encrypt_key, &mut buffer)?;
         output_subkey_signature(&keys.sign_key, encrypt_key, &mut buffer)?;
-    }
-    if let Some(auth_key) = &keys.auth_key {
-        output_public_auth_subkey(auth_key, &mut buffer)?;
-        output_auth_subkey_signature(&keys.sign_key, auth_key, &mut buffer)?;
     }
     out.write_all(buffer.get_ref())?;
     Ok(())
