@@ -609,6 +609,94 @@ fn test_authentication() {
 }
 
 #[test]
+fn test_auth_subkey() {
+    let bip39: Vec<&str> =
+        "switch limit barely shoot ritual reveal bomb obey luxury around language build"
+            .split(' ')
+            .collect();
+    let password = "magic-password";
+    let uid = "Integration Test <integration@test.com>";
+    let output = run_bip39key(
+        &bip39,
+        uid,
+        &["-p", password, "--algorithm", "hkdf", "--auth-subkey"],
+    )
+    .unwrap();
+    let gpg = Gpg::new();
+    gpg.import(&output.stdout, None, Some(password));
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let stdout = String::from_utf8_lossy(&keysout.stdout);
+    // Verify there are two subkeys: one encrypt (e) and one auth (a).
+    let sub_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("sub:")).collect();
+    assert_eq!(
+        sub_lines.len(),
+        2,
+        "Expected 2 subkeys, got: {:?}",
+        sub_lines
+    );
+    let caps: Vec<String> = sub_lines
+        .iter()
+        .map(|l| l.split(':').nth(11).unwrap_or("").to_string())
+        .collect();
+    assert!(
+        caps.iter().any(|c| c.contains('e')),
+        "Expected encrypt capability in subkeys: {:?}",
+        caps
+    );
+    assert!(
+        caps.iter().any(|c| c.contains('a')),
+        "Expected authentication capability in subkeys: {:?}",
+        caps
+    );
+}
+
+#[test]
+fn test_auth_subkey_without_passphrase() {
+    let gpg = Gpg::new();
+    let output = run_bip39key(BIP39, &userid(), &["--algorithm", "hkdf", "--auth-subkey"]).unwrap();
+    gpg.import(&output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let stdout = String::from_utf8_lossy(&keysout.stdout);
+    let sub_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("sub:")).collect();
+    assert_eq!(
+        sub_lines.len(),
+        2,
+        "Expected 2 subkeys, got: {:?}",
+        sub_lines
+    );
+    let caps: Vec<String> = sub_lines
+        .iter()
+        .map(|l| l.split(':').nth(11).unwrap_or("").to_string())
+        .collect();
+    assert!(
+        caps.iter().any(|c| c.contains('a')),
+        "Expected authentication capability in subkeys: {:?}",
+        caps
+    );
+}
+
+#[test]
+fn test_auth_subkey_public_key() {
+    let gpg = Gpg::new();
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &["--algorithm", "hkdf", "--auth-subkey", "--public-key"],
+    )
+    .unwrap();
+    gpg.import(&output.stdout, None, None);
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let stdout = String::from_utf8_lossy(&keysout.stdout);
+    let sub_lines: Vec<&str> = stdout.lines().filter(|l| l.starts_with("sub:")).collect();
+    assert_eq!(
+        sub_lines.len(),
+        2,
+        "Expected 2 subkeys, got: {:?}",
+        sub_lines
+    );
+}
+
+#[test]
 fn test_no_passphrase() {
     let bip39: Vec<&str> =
         "switch limit barely shoot ritual reveal bomb obey luxury around language build"
