@@ -106,6 +106,10 @@ struct Args {
     #[clap(short = 'b', long)]
     authorization_for_sign_key: bool,
 
+    /// Generate a separate authentication subkey (requires --algorithm hkdf).
+    #[clap(long)]
+    auth_subkey: bool,
+
     /// Do not add the passphrase as extra entropy. If set, the passphrase will only be used to
     /// encrypt the PGP or SSH key contents, and the key material itself will be generated from
     /// the seed and the user id.
@@ -262,6 +266,9 @@ fn validate(args: &Args) -> Result<()> {
     if args.use_concatenation && args.algorithm != keys::KeyAlgorithm::Xor {
         bail!("-c/--use-concatenation cannot be combined with --algorithm. Use --algorithm alone.");
     }
+    if args.auth_subkey && args.algorithm != keys::KeyAlgorithm::Hkdf && !args.use_concatenation {
+        bail!("--auth-subkey requires --algorithm hkdf.");
+    }
     Ok(())
 }
 
@@ -315,6 +322,7 @@ fn main() -> Result<()> {
         creation_timestamp_secs,
         expiration_timestamp_secs,
         generate_encrypt_key: !args.just_signkey,
+        generate_auth_key: args.auth_subkey,
         use_rfc9106_settings: args.use_rfc9106_settings,
         use_authorization_for_sign_key: args.authorization_for_sign_key,
     };
