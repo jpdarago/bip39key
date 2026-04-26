@@ -266,7 +266,7 @@ fn validate(args: &Args) -> Result<()> {
     if args.use_concatenation && args.algorithm != keys::KeyAlgorithm::Xor {
         bail!("-c/--use-concatenation cannot be combined with --algorithm. Use --algorithm alone.");
     }
-    if args.auth_subkey && args.algorithm != keys::KeyAlgorithm::Hkdf && !args.use_concatenation {
+    if args.auth_subkey && args.algorithm != keys::KeyAlgorithm::Hkdf {
         bail!("--auth-subkey requires --algorithm hkdf.");
     }
     Ok(())
