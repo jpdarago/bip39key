@@ -2,6 +2,7 @@
 name = "bip39key"
 version = "1.5.1"
 edition = "2021"
+description = "Generate deterministic OpenPGP and OpenSSH keys from BIP39/Electrum mnemonic seed phrases"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,6 +29,11 @@ strsim = "0.11.1"
 textwrap = "0.16"
 tiny-bip39 = "1.0.0"
 x25519-dalek = { version = "2.0.0-rc3", features = ["static_secrets"] }
+
+[build-dependencies]
+clap = { version = "4.4.11", features = ["derive"] }
+clap_complete = "4"
+clap_mangen = "0.2"
 
 [dev-dependencies]
 duct = "1"
