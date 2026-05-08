@@ -134,6 +134,65 @@ then pass the `--skip-passphrase-for-key-material/-n` option.
 > 128 bits of entropy and Argon2id's computational cost, both `concat` and
 > `hkdf` avoid this issue entirely.
 
+## Installing shell completions and manpage
+
+Building the project generates shell completions and a manpage automatically
+(in `completions/` and `man/`). Below are instructions for installing them.
+
+### NixOS
+
+If you package bip39key in a Nix derivation, add the completions and manpage
+to the install phase:
+
+```nix
+postInstall = ''
+  installShellCompletion --bash completions/bip39key.bash
+  installShellCompletion --zsh completions/bip39key.zsh
+  installManPage man/bip39key.1
+'';
+```
+
+For a standalone install without a derivation:
+
+```bash
+# Bash
+cp completions/bip39key.bash ~/.local/share/bash-completion/completions/bip39key
+
+# Zsh
+cp completions/bip39key.zsh ~/.local/share/zsh/site-functions/_bip39key
+
+# Manpage
+sudo cp man/bip39key.1 /run/current-system/sw/share/man/man1/
+# Or add to your home-manager or NixOS configuration instead.
+```
+
+### Debian/Ubuntu
+
+```bash
+# Bash
+sudo cp completions/bip39key.bash /usr/share/bash-completion/completions/bip39key
+
+# Zsh
+sudo cp completions/bip39key.zsh /usr/share/zsh/vendor-completions/_bip39key
+
+# Manpage
+sudo cp man/bip39key.1 /usr/local/share/man/man1/
+sudo mandb
+```
+
+### macOS
+
+```bash
+# Bash (requires bash-completion from Homebrew)
+cp completions/bip39key.bash $(brew --prefix)/etc/bash_completion.d/bip39key
+
+# Zsh
+cp completions/bip39key.zsh $(brew --prefix)/share/zsh/site-functions/_bip39key
+
+# Manpage
+cp man/bip39key.1 /usr/local/share/man/man1/
+```
+
 ## Running tests
 
 Tests are Rust integration tests that exercise the binary end-to-end against GPG

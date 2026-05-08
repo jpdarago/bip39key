@@ -100,18 +100,6 @@ pub struct Keys {
     pub passphrase: Option<String>,
 }
 
-/// Key derivation algorithm for combining seed and passphrase.
-#[derive(PartialEq, Eq, Clone, clap::ValueEnum, Debug)]
-pub enum KeyAlgorithm {
-    /// DEPRECATED: XOR of separate Argon2id hashes of seed and passphrase.
-    Xor,
-    /// DEPRECATED: Argon2id of concatenated seed and passphrase, split into sign/encrypt keys.
-    Concat,
-    /// Argon2id of concatenated seed and passphrase, then HKDF-Expand with domain separation
-    /// for sign and encrypt keys.
-    Hkdf,
-}
-
 fn run_argon(bytes: &[u8], user_id: &str, use_rfc9106_settings: bool) -> Result<Vec<u8>> {
     let config = if use_rfc9106_settings {
         let mut result = argon2::Config::rfc9106();

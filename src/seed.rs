@@ -1,32 +1,17 @@
 use crate::types::*;
 
+use crate::cli::SeedFormat;
 use anyhow::bail;
 use bip39::{Language, Mnemonic};
 use hmac::Mac;
 use inquire::validator::Validation;
 use inquire::{CustomUserError, Text};
 use pbkdf2::password_hash::{PasswordHasher, SaltString};
-use std::fmt;
 use std::io::{self, BufRead, Write};
 use std::sync::OnceLock;
 use strsim::levenshtein;
 
 type HmacSha512 = hmac::Hmac<sha2::Sha512>;
-
-#[derive(PartialEq, Eq, Clone, clap::ValueEnum, Debug)]
-pub enum SeedFormat {
-    Bip39,
-    Electrum,
-}
-
-impl fmt::Display for SeedFormat {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SeedFormat::Bip39 => write!(f, "BIP39"),
-            SeedFormat::Electrum => write!(f, "Electrum"),
-        }
-    }
-}
 
 fn electrum_seed(phrase: &str) -> pbkdf2::password_hash::Result<Vec<u8>> {
     let params = pbkdf2::Params {

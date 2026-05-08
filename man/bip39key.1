@@ -1,0 +1,210 @@
+.ie \n(.g .ds Aq \(aq
+.el .ds Aq '
+.TH bip39key 1  "bip39key 1.5.1" 
+.SH NAME
+bip39key \- Generate deterministic OpenPGP and OpenSSH keys from BIP39/Electrum mnemonic seed phrases
+.SH SYNOPSIS
+\fBbip39key\fR <\fB\-u\fR|\fB\-\-user\-id\fR> [\fB\-i\fR|\fB\-\-input\-filename\fR] [\fB\-o\fR|\fB\-\-output\-filename\fR] [\fB\-d\fR|\fB\-\-creation\-timestamp\fR] [\fB\-y\fR|\fB\-\-expiration\-timestamp\fR] [\fB\-j\fR|\fB\-\-just\-signkey\fR] [\fB\-f\fR|\fB\-\-format\fR] [\fB\-a\fR|\fB\-\-armor\fR] [\fB\-k\fR|\fB\-\-public\-key\fR] [\fB\-p\fR|\fB\-\-passphrase\fR] [\fB\-e\fR|\fB\-\-pinentry\fR] [\fB\-s\fR|\fB\-\-seed\-format\fR] [\fB\-g\fR|\fB\-\-algorithm\fR] [\fB\-q\fR|\fB\-\-interactive\fR] [\fB\-r\fR|\fB\-\-use\-rfc9106\-settings\fR] [\fB\-b\fR|\fB\-\-authorization\-for\-sign\-key\fR] [\fB\-\-auth\-subkey\fR] [\fB\-n\fR|\fB\-\-skip\-passphrase\-for\-key\-material\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+.SH DESCRIPTION
+Generate deterministic OpenPGP and OpenSSH keys from BIP39/Electrum mnemonic seed phrases
+.SH OPTIONS
+.TP
+\fB\-u\fR, \fB\-\-user\-id\fR \fI<USER_ID>\fR
+RFC 2822 of the user, e.g. "User <user@email.com>"
+.TP
+\fB\-i\fR, \fB\-\-input\-filename\fR \fI<INPUT_FILENAME>\fR
+Filename from which to read the mnemonic words
+.TP
+\fB\-o\fR, \fB\-\-output\-filename\fR \fI<OUTPUT_FILENAME>\fR
+Filename where to output the keys, if not present then write to stdout
+.TP
+\fB\-d\fR, \fB\-\-creation\-timestamp\fR \fI<CREATION_TIMESTAMP>\fR
+Creation timestamp (as unix timestamp in seconds). If unset, uses the genesis block (1231006505)
+.TP
+\fB\-y\fR, \fB\-\-expiration\-timestamp\fR \fI<EXPIRATION_TIMESTAMP>\fR
+Expiration timestamp (as unix timestamp in seconds). If unset, the keys do not expire
+.TP
+\fB\-j\fR, \fB\-\-just\-signkey\fR
+Only output the sign key for PGP
+.TP
+\fB\-f\fR, \fB\-\-format\fR \fI<FORMAT>\fR [default: pgp]
+Output format: SSH or PGP
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+pgp
+.IP \(bu 2
+ssh
+.RE
+.TP
+\fB\-a\fR, \fB\-\-armor\fR
+Output as armored
+.TP
+\fB\-k\fR, \fB\-\-public\-key\fR
+Output the public key
+.TP
+\fB\-p\fR, \fB\-\-passphrase\fR \fI<PASSPHRASE>\fR
+Optional passphrase. If set, \-e/\-\-pinentry must not be set. See README.md for details
+.TP
+\fB\-e\fR, \fB\-\-pinentry\fR
+Request passphrase with pinentry. See README.md for details
+.TP
+\fB\-s\fR, \fB\-\-seed\-format\fR \fI<SEED_FORMAT>\fR [default: bip39]
+Seed Format: BIP39, Electrum
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+bip39
+.IP \(bu 2
+electrum
+.RE
+.TP
+\fB\-g\fR, \fB\-\-algorithm\fR \fI<ALGORITHM>\fR [default: xor]
+Key derivation algorithm: xor (legacy default), concat, hkdf (recommended for new keys). Use \-\-algorithm hkdf for new keys. Defaults to xor for backward compatibility
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+xor: DEPRECATED: XOR of separate Argon2id hashes of seed and passphrase
+.IP \(bu 2
+concat: DEPRECATED: Argon2id of concatenated seed and passphrase, split into sign/encrypt keys
+.IP \(bu 2
+hkdf: Argon2id of concatenated seed and passphrase, then HKDF\-Expand with domain separation for sign and encrypt keys
+.RE
+.TP
+\fB\-q\fR, \fB\-\-interactive\fR \fI<INTERACTIVE>\fR
+DEPRECATED! Request seed phrase through an interactive CLI prompt
+.br
+
+.br
+\fIPossible values:\fR
+.RS 14
+.IP \(bu 2
+true
+.IP \(bu 2
+false
+.RE
+.TP
+\fB\-r\fR, \fB\-\-use\-rfc9106\-settings\fR
+Use RFC 9106 settings for Argon2id
+.TP
+\fB\-b\fR, \fB\-\-authorization\-for\-sign\-key\fR
+Add authorization capability to the sign key
+.TP
+\fB\-\-auth\-subkey\fR
+Generate a separate authentication subkey (requires \-\-algorithm hkdf)
+.TP
+\fB\-n\fR, \fB\-\-skip\-passphrase\-for\-key\-material\fR
+Do not add the passphrase as extra entropy. If set, the passphrase will only be used to encrypt the PGP or SSH key contents, and the key material itself will be generated from the seed and the user id
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print help (see a summary with \*(Aq\-h\*(Aq)
+.TP
+\fB\-V\fR, \fB\-\-version\fR
+Print version
+.SH VERSION
+v1.5.1
+.SH "KEY DERIVATION"
+The seed phrase (BIP39 or Electrum) is expanded from 128\-256 bits to 512 bits
+using Argon2id, with the user ID as the salt. If a passphrase is provided, it
+is combined with the seed before derivation (except with the \fBxor\fR
+algorithm, which hashes them separately).
+.PP
+The resulting 512 bits are then split into an Ed25519 signing key and a
+Curve25519 encryption key. For OpenPGP output, both keys are emitted (unless
+\fB\-\-just\-signkey\fR is set). For OpenSSH output, only the Ed25519 signing
+key is used.
+.PP
+The \fB\-\-algorithm\fR flag controls how the seed and passphrase are combined:
+.SS "hkdf (recommended)"
+Concatenates the seed and passphrase, applies Argon2id, then uses HKDF\-Expand
+(RFC 5869) with distinct info strings (\fIbip39key\-sign\-v1\fR and
+\fIbip39key\-encrypt\-v1\fR) to derive independent signing and encryption keys.
+This provides proper domain separation between key types.
+.PP
+\fBAll new keys should use \-\-algorithm hkdf.\fR
+.SS "concat (deprecated)"
+Concatenates the seed and passphrase, applies Argon2id, and splits the output
+at a fixed byte offset. Lacks domain separation between key types.
+.SS "xor (deprecated, current default)"
+Applies Argon2id separately to the seed and the passphrase, then XORs the two
+results. This has a known weakness: if an attacker obtains the passphrase and
+the output key, they can recover the hashed seed and attempt to brute\-force
+the input seed phrase.
+.PP
+The \fBxor\fR algorithm remains the default only for backward compatibility with
+existing keys. It will be replaced by \fBhkdf\fR as the default in a future
+major version.
+.SH "DEPRECATED OPTIONS"
+The following options are deprecated and should not be used for new keys:
+.TP
+\fB\-c\fR, \fB\-\-use\-concatenation\fR
+Equivalent to \fB\-\-algorithm concat\fR. Use \fB\-\-algorithm\fR directly instead.
+.TP
+\fB\-t\fR, \fB\-\-timestamp\fR
+Renamed to \fB\-\-creation\-timestamp\fR (\fB\-d\fR).
+.TP
+\fB\-q\fR, \fB\-\-interactive\fR
+No longer needed. Interactive mode is now automatically enabled when stdin is a
+terminal.
+.SH "ENVIRONMENT"
+.TP
+\fBWORDLIST_BIP39\fR
+Path to a custom BIP39 wordlist file. Must contain one word per line in the same
+format as the bundled English wordlist. If unset, the bundled wordlist is used.
+.TP
+\fBBIP39_PINENTRY\fR
+Path to the pinentry executable used by \fB\-\-pinentry\fR. Defaults to
+\fBpinentry\fR.
+.TP
+\fBNO_INTERACTIVE_OUTPUT\fR
+Set to \fB1\fR to suppress all informational output (welcome message, warnings,
+fingerprint) even when stdout is a terminal. Useful for scripting.
+.SH "EXAMPLES"
+Generate a PGP key pair using the recommended algorithm, reading the seed from
+a file:
+.PP
+.nf
+bip39key \-\-algorithm hkdf \-u "Alice <alice@example.com>" \-i seed.txt
+.fi
+.PP
+Generate an armored PGP public key:
+.PP
+.nf
+bip39key \-\-algorithm hkdf \-u "Alice <alice@example.com>" \-i seed.txt \-ak
+.fi
+.PP
+Generate an SSH key with a passphrase provided via pinentry:
+.PP
+.nf
+bip39key \-\-algorithm hkdf \-u "Alice <alice@example.com>" \-f ssh \-e \-i seed.txt
+.fi
+.PP
+Pipe a seed phrase from another program:
+.PP
+.nf
+echo "abandon abandon ... about" | bip39key \-\-algorithm hkdf \-u "Alice <alice@example.com>"
+.fi
+.PP
+Generate a PGP key with an expiration date (Unix timestamp):
+.PP
+.nf
+bip39key \-\-algorithm hkdf \-u "Alice <alice@example.com>" \-y 1893456000 \-i seed.txt
+.fi
+.SH "EXIT STATUS"
+.TP
+\fB0\fR
+Successful key generation.
+.TP
+\fB1\fR
+Error (invalid arguments, unreadable input, passphrase mismatch, etc.).
+.SH "SEE ALSO"
+\fBgpg\fR(1), \fBssh\-keygen\fR(1)
