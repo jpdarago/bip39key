@@ -57,9 +57,10 @@ fn output_as_packet(
             out.write_all(&[(length & 0xFF) as u8])?;
         }
         192..=8383 => {
-            let first_byte: u8 = (((length & !0xFF) >> 8) + 192).try_into()?;
-            let second_byte: u8 = ((length & 0xFF) - 192).try_into()?;
-            out.write_all(&[first_byte, second_byte])?;
+            // RFC 4880 4.2.2.2: bodyLen = ((1st - 192) << 8) + 2nd + 192,
+            // so subtract 192 from the whole length before splitting bytes.
+            let adjusted = length - 192;
+            out.write_all(&[((adjusted >> 8) + 192) as u8, (adjusted & 0xFF) as u8])?;
         }
         _ => {
             out.write_all(&[255])?;
@@ -593,4 +594,32 @@ pub fn output_public_as_packets<W: Write>(
     }
     out.write_all(buffer.get_ref())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Encode a packet with a body of `length` bytes and decode the length
+    // back from its header, per RFC 4880 section 4.2.2.
+    fn roundtrip_packet_length(length: usize) -> usize {
+        let mut cursor = ByteCursor::new(vec![]);
+        output_as_packet(PacketType::UserId, &vec![0u8; length], &mut cursor).unwrap();
+        let bytes = cursor.into_inner();
+        match bytes[1] {
+            0..=191 => bytes[1] as usize,
+            192..=223 => (((bytes[1] - 192) as usize) << 8) + bytes[2] as usize + 192,
+            255 => u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]) as usize,
+            _ => panic!("unexpected length encoding"),
+        }
+    }
+
+    #[test]
+    fn test_packet_length_encoding() {
+        for length in [
+            0, 1, 191, 192, 193, 255, 256, 300, 447, 448, 1000, 8383, 8384, 70000,
+        ] {
+            assert_eq!(roundtrip_packet_length(length), length);
+        }
+    }
 }
