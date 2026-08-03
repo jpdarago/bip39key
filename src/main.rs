@@ -12,7 +12,7 @@ use crate::keys::*;
 use crate::types::*;
 use cli::{Args, KeyAlgorithm, OutputFormat};
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use clap::Parser;
 use inquire::Text;
 use std::io::BufWriter;
@@ -289,7 +289,7 @@ fn main() -> Result<()> {
         KeyAlgorithm::Concat => Keys::new_with_concat(settings),
         KeyAlgorithm::Xor => Keys::new_with_xor(settings),
     }
-    .expect("Could not build keys");
+    .context("Could not build keys")?;
     console_logln!("Done generating key entropy");
     console_logln!("{}", format_fingerprint(&args, &keys)?);
     output_keys(&args, &keys)
