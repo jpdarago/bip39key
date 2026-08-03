@@ -104,6 +104,35 @@ fn output_keys_to_stdout(args: &Args, keys: &Keys) -> Result<()> {
     )
 }
 
+/// Restrict the OpenOptions mode for files created for key output:
+/// 0600 for secret keys, 0644 for public keys.
+#[cfg(unix)]
+fn set_creation_permissions(opts: &mut std::fs::OpenOptions, public_key: bool) {
+    use std::os::unix::fs::OpenOptionsExt;
+    // Secret key files must not be readable by other users.
+    opts.mode(if public_key { 0o644 } else { 0o600 });
+}
+
+#[cfg(not(unix))]
+fn set_creation_permissions(_opts: &mut std::fs::OpenOptions, _public_key: bool) {}
+
+/// Tighten permissions on an already-open output file. The creation mode
+/// only applies to newly created files; pre-existing files keep their old
+/// mode across truncation, so secret key output must be chmod'ed too.
+#[cfg(unix)]
+fn set_permissions(output: &std::fs::File, public_key: bool) -> Result<()> {
+    if !public_key {
+        use std::os::unix::fs::PermissionsExt;
+        output.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_permissions(_output: &std::fs::File, _public_key: bool) -> Result<()> {
+    Ok(())
+}
+
 fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
     let filename = if args.output_filename.is_some() {
         args.output_filename.as_ref().map(|f| f.to_string())
@@ -116,15 +145,18 @@ fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
         if f.is_empty() {
             return output_keys_to_stdout(args, keys);
         }
-        let output = std::fs::File::create(&f);
-        if let Err(err) = output {
-            eprintln!("Cannot open output file {}: {}", f, err);
-            std::process::exit(1);
-        }
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        set_creation_permissions(&mut opts, args.public_key);
+        let output = match opts.open(&f) {
+            Ok(output) => output,
+            Err(err) => bail!("Cannot open output file {}: {}", f, err),
+        };
+        set_permissions(&output, args.public_key)?;
         write_keys(
             args,
             keys,
-            BufWriter::new(&mut output.unwrap()),
+            BufWriter::new(output),
             /*output_as_text=*/ args.armor,
         )
     } else {
