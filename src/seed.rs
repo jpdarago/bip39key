@@ -126,7 +126,9 @@ pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> 
         }
         SeedFormat::Electrum => {
             if !is_valid_electrum_phrase(phrase) {
-                bail!("Invalid Electrum seed phrase {}", phrase);
+                // Do not echo the phrase: it is secret material and would
+                // land in terminal scrollback and logs.
+                bail!("Not a valid Electrum seed phrase (seed version check failed)");
             }
             let result = electrum_seed(phrase);
             if let Err(err) = result {
