@@ -137,53 +137,107 @@ pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> 
     }
 }
 
+/// Maximum number of words in a supported seed phrase (24-word BIP39).
+const MAX_SEED_WORDS: usize = 24;
+
+/// Collect seed words by repeatedly calling `read_input` with the next word
+/// number. Each input may contain several whitespace-separated words (paste).
+/// Collection stops on an empty input (after at least one word) or once
+/// MAX_SEED_WORDS words have been entered. May return more than
+/// MAX_SEED_WORDS if a paste overshoots; `decode_phrase` rejects that.
+fn collect_words<F>(mut read_input: F) -> Result<Vec<String>>
+where
+    F: FnMut(usize) -> Result<String>,
+{
+    let mut words: Vec<String> = Vec::new();
+    while words.len() < MAX_SEED_WORDS {
+        let input = read_input(words.len() + 1)?;
+        if input.trim().is_empty() {
+            if words.is_empty() {
+                continue;
+            }
+            break;
+        }
+        words.extend(input.split_whitespace().map(String::from));
+    }
+    Ok(words)
+}
+
 pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
     console_logln!("Please input a seed phrase in {} format.", seed_format);
+    console_logln!(
+        "Enter one or more words per line ({} words maximum). \
+         Press Enter on an empty line to finish.",
+        MAX_SEED_WORDS
+    );
     loop {
-        let mut result = vec![];
-        let mut i = 0;
-        loop {
-            if i > 12 {
-                println!("Too many words");
-                io::stdout().flush().unwrap();
-                result.clear();
-                break;
-            }
-            if i == 12 {
-                break;
-            }
-            let word_start = i + 1;
-            let input = Text::new(&format!("Word (currently {}): ", word_start))
+        let words = collect_words(|word_number| {
+            let input = Text::new(&format!("Word (currently {}): ", word_number))
                 .with_validator(validate)
                 .with_autocomplete(suggest)
                 .prompt()?;
-            for word in input.split_whitespace() {
-                result.push(word.trim().to_string());
-                i += 1;
+            let entered = input.split_whitespace().count();
+            if entered > 0 {
+                // Overwrite the answered prompt line so previously entered words
+                // are not readable in terminal scrollback or screen captures.
+                // Move cursor up one line, clear it, and print a masked replacement.
+                print!("\x1b[1A\x1b[2KWord {}: ****", word_number);
+                if entered > 1 {
+                    // Multiple words were pasted at once.
+                    print!(" ({} words entered)", entered);
+                }
+                println!();
+                io::stdout().flush()?;
             }
-            // Overwrite the answered prompt line so previously entered words
-            // are not readable in terminal scrollback or screen captures.
-            // Move cursor up one line, clear it, and print a masked replacement.
-            print!("\x1b[1A\x1b[2KWord {}: ****", word_start);
-            if i > word_start {
-                // Multiple words were pasted at once.
-                print!(" ({} words entered)", i - word_start + 1);
-            }
-            println!();
-            io::stdout().flush().unwrap();
-        }
-        if result.is_empty() {
-            continue;
-        }
-        match decode_phrase(seed_format, &result.join(" ")) {
+            Ok(input)
+        })?;
+        match decode_phrase(seed_format, &words.join(" ")) {
             Ok(phrase) => {
                 return Ok(phrase);
             }
             Err(s) => {
                 println!("Failed to parse {} phrase: {}", seed_format, s);
-                result.clear();
-                io::stdout().flush().unwrap();
+                io::stdout().flush()?;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scripted<'a>(inputs: &'a [&'a str]) -> impl FnMut(usize) -> Result<String> + 'a {
+        let mut iter = inputs.iter();
+        move |_| Ok(iter.next().expect("ran out of scripted inputs").to_string())
+    }
+
+    const GOLDEN_24: &str = "void come effort suffer camp survey warrior heavy shoot primary \
+         clutch crush open amazing screen patrol group space point ten exist slush involve unfold";
+
+    #[test]
+    fn test_collect_24_words_one_at_a_time() {
+        let inputs: Vec<&str> = GOLDEN_24.split_whitespace().collect();
+        let words = collect_words(scripted(&inputs)).unwrap();
+        assert_eq!(words.len(), 24);
+        assert_eq!(words.join(" "), GOLDEN_24);
+    }
+
+    #[test]
+    fn test_collect_stops_on_empty_input() {
+        let words = collect_words(scripted(&["abandon", "ability", ""])).unwrap();
+        assert_eq!(words, ["abandon", "ability"]);
+    }
+
+    #[test]
+    fn test_collect_pasted_phrase() {
+        let words = collect_words(scripted(&[GOLDEN_24])).unwrap();
+        assert_eq!(words.len(), 24);
+    }
+
+    #[test]
+    fn test_decode_24_word_phrase() {
+        let entropy = decode_phrase(&SeedFormat::Bip39, GOLDEN_24).unwrap();
+        assert_eq!(entropy.len() * 8, 256);
     }
 }
