@@ -140,7 +140,9 @@ pub fn key_fingerprint(keys: &Keys) -> Result<String> {
     put_bytes(&keys.sign_key.public_key, &mut cursor)?;
     use sha2::Digest;
     let hash = sha2::Sha256::digest(cursor.get_ref());
-    Ok(base64::encode(hash))
+    // ssh-keygen -l prints SHA256 fingerprints in unpadded base64; match it
+    // so users can compare the two outputs directly.
+    Ok(base64::encode(hash).trim_end_matches('=').to_string())
 }
 
 pub fn output_public_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) -> Result<()> {
