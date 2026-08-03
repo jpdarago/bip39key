@@ -253,9 +253,10 @@ fn output_auth_subkey_signature(
     let mut subpacket_cursor = ByteCursor::new(Vec::with_capacity(256));
     subpacket_cursor.write_all(&[5, 2])?;
     subpacket_cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
-    // Expiration time in seconds (3), if provided.
+    // Key expiration time subpacket (9) — the delta after which the subkey
+    // expires.
     if let Some(expiration_time_secs) = auth_key.expiration_timestamp_secs {
-        subpacket_cursor.write_all(&[5, 3])?;
+        subpacket_cursor.write_all(&[5, 9])?;
         let expiration_delta_secs = expiration_time_secs - auth_key.creation_timestamp_secs;
         subpacket_cursor.write_u32::<BigEndian>(expiration_delta_secs.try_into().unwrap())?;
     }
@@ -434,9 +435,10 @@ fn output_subkey_signature(key: &SignKey, subkey: &EncryptKey, out: &mut ByteCur
     let mut subpacket_cursor = ByteCursor::new(Vec::with_capacity(256));
     subpacket_cursor.write_all(&[5, 2])?;
     subpacket_cursor.write_u32::<BigEndian>(key.creation_timestamp_secs.try_into().unwrap())?;
-    // Expiration time in seconds (3), if provided.
+    // Key expiration time subpacket (9) — the delta after which the subkey
+    // expires.
     if let Some(expiration_time_secs) = subkey.expiration_timestamp_secs {
-        subpacket_cursor.write_all(&[5, 3])?;
+        subpacket_cursor.write_all(&[5, 9])?;
         // Expirations are in seconds from the creation time.
         let expiration_delta_secs = expiration_time_secs - subkey.creation_timestamp_secs;
         subpacket_cursor.write_u32::<BigEndian>(expiration_delta_secs.try_into().unwrap())?;
