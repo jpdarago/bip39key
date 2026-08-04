@@ -15,8 +15,8 @@ _bip39key() {
 
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" : \
-'-u+[RFC 2822 of the user, e.g. "User <user@email.com>"]:USER_ID:_default' \
-'--user-id=[RFC 2822 of the user, e.g. "User <user@email.com>"]:USER_ID:_default' \
+'-u+[RFC 2822 of the user, e.g. "User <user@email.com>". Required unless --from-receipt is set]:USER_ID:_default' \
+'--user-id=[RFC 2822 of the user, e.g. "User <user@email.com>". Required unless --from-receipt is set]:USER_ID:_default' \
 '-i+[Filename from which to read the mnemonic words]:INPUT_FILENAME:_default' \
 '--input-filename=[Filename from which to read the mnemonic words]:INPUT_FILENAME:_default' \
 '-o+[Filename where to output the keys, if not present then write to stdout]:OUTPUT_FILENAME:_default' \
@@ -41,6 +41,8 @@ concat\:"DEPRECATED\: Argon2id of concatenated seed and passphrase, split into s
 hkdf\:"Argon2id of concatenated seed and passphrase, then HKDF-Expand with domain separation for sign and encrypt keys"))' \
 '-q+[DEPRECATED! Request seed phrase through an interactive CLI prompt]:INTERACTIVE:(true false)' \
 '--interactive=[DEPRECATED! Request seed phrase through an interactive CLI prompt]:INTERACTIVE:(true false)' \
+'--output-receipt=[Write an HTML recovery receipt to this file. The receipt records the derivation parameters, key fingerprints, and build provenance — but no secrets — so the key can be regenerated from the mnemonic later]:FILE:_default' \
+'--from-receipt=[Regenerate a key from a receipt file (HTML receipt or raw receipt string). The receipt supplies the user ID and all derivation parameters; only the mnemonic (and passphrase, if used) is prompted. The regenerated key'\''s fingerprint is checked against the receipt]:FILE:_default' \
 '-j[Only output the sign key for PGP]' \
 '--just-signkey[Only output the sign key for PGP]' \
 '-a[Output as armored]' \

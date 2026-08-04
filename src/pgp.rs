@@ -361,6 +361,22 @@ pub fn key_fingerprint(key: &SignKey) -> Result<Vec<u8>> {
     v4_fingerprint(&public_key_payload(key)?)
 }
 
+/// Labeled hex fingerprints of the subkeys, in emission order. These change
+/// with the subkey key material, so a receipt carrying them can detect a
+/// regeneration that produced different subkeys.
+pub fn subkey_fingerprints(keys: &Keys) -> Result<Vec<(String, String)>> {
+    let mut result = Vec::new();
+    if let Some(encrypt_key) = &keys.encrypt_key {
+        let fp = v4_fingerprint(&public_subkey_payload(encrypt_key)?)?;
+        result.push(("encrypt".to_string(), hex::encode_upper(fp)));
+    }
+    if let Some(auth_key) = &keys.auth_key {
+        let fp = v4_fingerprint(&public_auth_subkey_payload(auth_key)?)?;
+        result.push(("auth".to_string(), hex::encode_upper(fp)));
+    }
+    Ok(result)
+}
+
 fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
     let mut packet_cursor = ByteCursor::new(Vec::with_capacity(256));
     // Version 4 signature.

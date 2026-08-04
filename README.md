@@ -39,11 +39,12 @@ GPG).
 ## Usage
 
 ```
-Usage: bip39key [OPTIONS] --user-id <USER_ID>
+Usage: bip39key [OPTIONS]
 
 Options:
   -u, --user-id <USER_ID>
-          RFC 2822 of the user, e.g. "User <user@email.com>"
+          RFC 2822 of the user, e.g. "User <user@email.com>".
+          Required unless --from-receipt is set
   -i, --input-filename <INPUT_FILENAME>
           Filename from which to read the mnemonic words
   -o, --output-filename <OUTPUT_FILENAME>
@@ -74,15 +75,58 @@ Options:
           Use RFC 9106 settings for Argon2id
   -b, --authorization-for-sign-key
           Add authorization capability to the sign key
+      --auth-subkey
+          Generate a separate authentication subkey (requires --algorithm hkdf)
   -n, --skip-passphrase-for-key-material
           Do not add the passphrase as extra entropy. If set, the passphrase will only be
           used to encrypt the PGP or SSH key contents, and the key material itself will be
           generated from the seed and the user id
+      --output-receipt <FILE>
+          Write an HTML recovery receipt to this file. The receipt records the derivation
+          parameters, key fingerprints, and build provenance — but no secrets — so the key
+          can be regenerated from the mnemonic later
+      --from-receipt <FILE>
+          Regenerate a key from a receipt file (HTML receipt or raw receipt string). The
+          receipt supplies the user ID and all derivation parameters; only the mnemonic
+          (and passphrase, if used) is prompted. The regenerated key's fingerprint is
+          checked against the receipt
   -h, --help
           Print help
   -V, --version
           Print version
 ```
+
+## Recovery receipts
+
+A receipt is a self-contained HTML disaster-recovery document for a generated
+key. It records everything needed to regenerate the key — user ID, seed
+format, derivation algorithm, Argon2id parameters, timestamps, key structure —
+plus the key fingerprints, a QR code of the compact receipt string, and build
+provenance (version, git commit, binary SHA-256, reproducible build
+instructions). It contains **no secrets**: the mnemonic, passphrase, and key
+material are never written to it, so it is safe to store in cloud storage,
+email, or print.
+
+Generate a key and its receipt:
+
+```sh
+bip39key -g hkdf -u "Alice <alice@example.com>" -i seed.txt -o key.gpg \
+    --output-receipt receipt.html
+```
+
+Years later, regenerate the same key from the receipt and the mnemonic:
+
+```sh
+bip39key --from-receipt receipt.html -o key.gpg
+```
+
+The receipt supplies the user ID and every derivation flag; only the mnemonic
+(and passphrase, if one was used) is needed. The regenerated key's fingerprint
+is checked against the one stored in the receipt, so entering the wrong seed
+phrase or passphrase fails loudly instead of silently producing a different
+key. If the receipt file is lost but the receipt string (or its QR code) was
+saved elsewhere, `--from-receipt` also accepts a file containing just the
+receipt string, e.g. `bip39key:1:bip39:withpass:hkdf:Alice <alice@example.com>:ABCD`.
 
 ## Why BIP39
 

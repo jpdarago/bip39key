@@ -38,8 +38,9 @@ pub enum KeyAlgorithm {
 #[clap(author, version, about, long_about = None)]
 pub struct Args {
     /// RFC 2822 of the user, e.g. "User <user@email.com>".
+    /// Required unless --from-receipt is set.
     #[clap(short, long)]
-    pub user_id: String,
+    pub user_id: Option<String>,
 
     /// Filename from which to read the mnemonic words.
     #[clap(short, long)]
@@ -121,4 +122,17 @@ pub struct Args {
     /// the seed and the user id.
     #[clap(short = 'n', long)]
     pub skip_passphrase_for_key_material: bool,
+
+    /// Write an HTML recovery receipt to this file. The receipt records the
+    /// derivation parameters, key fingerprints, and build provenance — but no
+    /// secrets — so the key can be regenerated from the mnemonic later.
+    #[clap(long, value_name = "FILE")]
+    pub output_receipt: Option<String>,
+
+    /// Regenerate a key from a receipt file (HTML receipt or raw receipt
+    /// string). The receipt supplies the user ID and all derivation
+    /// parameters; only the mnemonic (and passphrase, if used) is prompted.
+    /// The regenerated key's fingerprint is checked against the receipt.
+    #[clap(long, value_name = "FILE")]
+    pub from_receipt: Option<String>,
 }

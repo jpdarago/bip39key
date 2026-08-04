@@ -10,6 +10,31 @@ fn main() -> std::io::Result<()> {
     println!("cargo:rerun-if-changed=src/cli.rs");
     println!("cargo:rerun-if-changed=build.rs");
 
+    // Embed the git commit hash at compile time for receipt provenance. An
+    // explicit BIP39KEY_COMMIT environment variable wins over `git rev-parse`:
+    // builds from a source tree without .git (Nix sandbox, source tarballs)
+    // can inject the commit and still produce an identical binary.
+    let commit = std::env::var("BIP39KEY_COMMIT")
+        .ok()
+        .filter(|c| !c.is_empty())
+        .or_else(|| {
+            std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=BIP39KEY_COMMIT={}", commit);
+    println!("cargo:rerun-if-env-changed=BIP39KEY_COMMIT");
+    println!(
+        "cargo:rustc-env=BIP39KEY_TARGET={}",
+        std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string())
+    );
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=.git/refs/");
+
     let mut cmd = Args::command();
     cmd = cmd.name("bip39key");
 

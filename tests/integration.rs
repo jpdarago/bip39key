@@ -1140,3 +1140,185 @@ fn test_rejects_timestamps_outside_openpgp_range() {
         );
     }
 }
+
+// --- Receipt tests ---
+
+fn run_bip39key_raw(seed: &[&str], flags: &[&str]) -> io::Result<Output> {
+    cmd(env!("CARGO_BIN_EXE_bip39key"), flags)
+        .stdin_bytes(seed.join(" ").into_bytes())
+        .stdout_capture()
+        .stderr_capture()
+        .unchecked()
+        .run()
+}
+
+#[test]
+fn test_receipt_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+    let receipt_str = receipt_path.to_str().unwrap();
+    let key1 = tmp.path().join("key1.gpg");
+    let key2 = tmp.path().join("key2.gpg");
+
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "-g",
+            "hkdf",
+            "--auth-subkey",
+            "-y",
+            "2000000000",
+            "--output-receipt",
+            receipt_str,
+            "-o",
+            key1.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(output.status.success());
+
+    let html = fs::read_to_string(&receipt_path).unwrap();
+    assert!(html.contains("data-bip39key-receipt=\"bip39key:1:bip39:nopass:hkdf:"));
+    assert!(html.contains("auth=1"));
+    assert!(html.contains("expires=2000000000"));
+    assert!(html.contains("data-bip39key-fingerprint="));
+    assert!(html.contains("data-bip39key-subkey-fingerprints=\"encrypt="));
+    assert!(html.contains(",auth="));
+    // The receipt must not contain the mnemonic.
+    assert!(!html.contains(&BIP39.join(" ")));
+
+    // Regenerate from the receipt alone: no -u or derivation flags. The
+    // key has no passphrase, so the output bytes are deterministic.
+    let regen = run_bip39key_raw(
+        BIP39,
+        &["--from-receipt", receipt_str, "-o", key2.to_str().unwrap()],
+    )
+    .unwrap();
+    assert!(
+        regen.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&regen.stderr)
+    );
+    assert_eq!(fs::read(&key1).unwrap(), fs::read(&key2).unwrap());
+}
+
+#[test]
+fn test_receipt_detects_wrong_seed() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+    let receipt_str = receipt_path.to_str().unwrap();
+    let key1 = tmp.path().join("key1.gpg");
+    let key2 = tmp.path().join("key2.gpg");
+
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "-g",
+            "hkdf",
+            "--output-receipt",
+            receipt_str,
+            "-o",
+            key1.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(output.status.success());
+
+    let wrong: Vec<&str> =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow"
+            .split(' ')
+            .collect();
+    let regen = run_bip39key_raw(
+        &wrong,
+        &["--from-receipt", receipt_str, "-o", key2.to_str().unwrap()],
+    )
+    .unwrap();
+    assert!(!regen.status.success());
+    let stderr = String::from_utf8_lossy(&regen.stderr);
+    assert!(
+        stderr.contains("Fingerprint mismatch"),
+        "stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_receipt_rejects_user_id_override() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+    let receipt_str = receipt_path.to_str().unwrap();
+
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &["-g", "hkdf", "--output-receipt", receipt_str],
+    )
+    .unwrap();
+    assert!(output.status.success());
+
+    let regen = run_bip39key_raw(
+        BIP39,
+        &[
+            "-u",
+            "Other <other@test.com>",
+            "--from-receipt",
+            receipt_str,
+        ],
+    )
+    .unwrap();
+    assert!(!regen.status.success());
+    let stderr = String::from_utf8_lossy(&regen.stderr);
+    assert!(
+        stderr.contains("cannot be combined with --from-receipt"),
+        "stderr: {}",
+        stderr
+    );
+}
+
+#[test]
+fn test_ssh_receipt_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+    let receipt_str = receipt_path.to_str().unwrap();
+    let key1 = tmp.path().join("key1.ssh");
+    let key2 = tmp.path().join("key2.ssh");
+
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "-g",
+            "hkdf",
+            "-f",
+            "ssh",
+            "--output-receipt",
+            receipt_str,
+            "-o",
+            key1.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(output.status.success());
+
+    let html = fs::read_to_string(&receipt_path).unwrap();
+    assert!(html.contains("format=ssh"));
+    assert!(html.contains("SSH Key Fingerprint"));
+
+    let regen = run_bip39key_raw(
+        BIP39,
+        &["--from-receipt", receipt_str, "-o", key2.to_str().unwrap()],
+    )
+    .unwrap();
+    assert!(
+        regen.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&regen.stderr)
+    );
+    assert_eq!(fs::read(&key1).unwrap(), fs::read(&key2).unwrap());
+
+    // The regenerated key is a valid SSH key.
+    let keygen = run_ssh_keygen(&fs::read(&key2).unwrap(), "").unwrap();
+    assert!(keygen.status.success());
+}

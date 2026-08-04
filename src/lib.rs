@@ -11,9 +11,11 @@
 pub mod console;
 
 pub mod cli;
+pub mod html_receipt;
 pub mod keys;
 pub mod passphrase;
 pub mod pgp;
+pub mod receipt;
 pub mod seed;
 pub mod ssh;
 pub mod types;
