@@ -1,40 +1,27 @@
 use crate::cli::{KeyAlgorithm, SeedFormat};
+use crate::keys::DEFAULT_CREATION_TIMESTAMP;
 use crate::types::*;
 use sha2::Digest;
 use std::fmt;
 
 const RECEIPT_TOOL: &str = "bip39key";
 const RECEIPT_VERSION: &str = "1";
-const DEFAULT_CREATED: i64 = 1231006505;
 
-/// Validate creation/expiration timestamps against the limits imposed by the
-/// OpenPGP v4 packet format, which stores the creation time as a u32 and the
-/// expiration as a u32 delta from creation. `expires == 0` means "no expiry".
-///
-/// Without this, an out-of-range value flows into `pgp.rs` and panics on
-/// `try_into().unwrap()` — after the expensive Argon2id derivation has run.
-pub fn validate_timestamps(created: i64, expires: i64) -> Result<()> {
-    if created < 0 || created > u32::MAX as i64 {
+/// The receipt string is colon-separated, so a user ID containing a colon
+/// would produce a receipt that cannot be parsed back. Reject it before the
+/// expensive key derivation instead of writing an unrecoverable receipt.
+pub fn validate_user_id(user_id: &str) -> Result<()> {
+    if user_id.is_empty() {
+        anyhow::bail!("User ID must not be empty when writing a receipt");
+    }
+    if user_id.contains(':') {
         anyhow::bail!(
-            "Creation timestamp out of range (0..={}): {}",
-            u32::MAX,
-            created
+            "User ID must not contain ':' when writing a receipt (receipts are colon-separated): '{}'",
+            user_id
         );
     }
-    if expires != 0 {
-        if expires < created {
-            anyhow::bail!(
-                "Expiration timestamp {} is before creation timestamp {}",
-                expires,
-                created
-            );
-        }
-        if expires - created > u32::MAX as i64 {
-            anyhow::bail!(
-                "Expiration delta exceeds the OpenPGP u32 limit ({} seconds)",
-                u32::MAX
-            );
-        }
+    if user_id.contains(['\n', '\r']) {
+        anyhow::bail!("User ID must not contain line breaks when writing a receipt");
     }
     Ok(())
 }
@@ -62,10 +49,27 @@ fn algorithm_str(algorithm: &KeyAlgorithm) -> &'static str {
     }
 }
 
+/// Parse a boolean flag value. Only "1" is accepted: receipts are written by
+/// this tool, so anything else is a transcription error, not a preference.
+fn parse_flag(key: &str, value: &str) -> Result<bool> {
+    match value {
+        "1" => Ok(true),
+        other => anyhow::bail!(
+            "Invalid value for receipt option '{}': expected '1', got '{}'",
+            key,
+            other
+        ),
+    }
+}
+
 /// All parameters needed to deterministically regenerate a key, minus the
 /// secrets (mnemonic and passphrase). Unlike memo2key, bip39key does not fix
 /// the derivation algorithm or Argon2id parameters, so both are recorded.
-#[derive(Debug, Clone)]
+///
+/// Receipt version 1 implies the legacy Argon2id parameter set (64 MiB,
+/// 32 iterations, 8 lanes) unless `argon=rfc9106` is present. Changing those
+/// defaults requires a new receipt version.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Receipt {
     pub seed_format: SeedFormat,
     pub pass_role: PassRole,
@@ -82,40 +86,12 @@ pub struct Receipt {
     /// The key was emitted in SSH format (`-f ssh`); default is PGP.
     pub ssh_format: bool,
     pub created: i64,
-    pub expires: i64,
+    /// Absolute expiration timestamp; `None` means the key never expires.
+    pub expires: Option<i64>,
     pub user_id: String,
 }
 
 impl Receipt {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        seed_format: SeedFormat,
-        pass_role: PassRole,
-        algorithm: KeyAlgorithm,
-        rfc9106: bool,
-        auth_subkey: bool,
-        sign_auth: bool,
-        just_signkey: bool,
-        ssh_format: bool,
-        user_id: String,
-        created: i64,
-        expires: Option<i64>,
-    ) -> Self {
-        Receipt {
-            seed_format,
-            pass_role,
-            algorithm,
-            rfc9106,
-            auth_subkey,
-            sign_auth,
-            just_signkey,
-            ssh_format,
-            created,
-            expires: expires.unwrap_or(0),
-            user_id,
-        }
-    }
-
     fn compute_checksum(fields_before_checksum: &str) -> String {
         let hash = sha2::Sha256::digest(fields_before_checksum.as_bytes());
         format!("{:02X}{:02X}", hash[0], hash[1])
@@ -151,11 +127,11 @@ impl Receipt {
         if self.ssh_format {
             parts.push("format=ssh".to_string());
         }
-        if self.created != DEFAULT_CREATED {
+        if self.created != DEFAULT_CREATION_TIMESTAMP {
             parts.push(format!("created={}", self.created));
         }
-        if self.expires != 0 {
-            parts.push(format!("expires={}", self.expires));
+        if let Some(expires) = self.expires {
+            parts.push(format!("expires={}", expires));
         }
 
         // User ID (second-to-last field).
@@ -242,41 +218,44 @@ impl Receipt {
         let mut sign_auth = false;
         let mut just_signkey = false;
         let mut ssh_format = false;
-        let mut created = DEFAULT_CREATED;
-        let mut expires = 0i64;
+        let mut created = DEFAULT_CREATION_TIMESTAMP;
+        let mut expires = None;
 
         for &field in &parts[5..parts.len() - 2] {
-            if let Some((key, value)) = field.split_once('=') {
-                match key {
-                    "argon" => match value {
-                        "rfc9106" => rfc9106 = true,
-                        other => anyhow::bail!("Unknown argon value in receipt: '{}'", other),
-                    },
-                    "auth" => auth_subkey = value == "1",
-                    "signauth" => sign_auth = value == "1",
-                    "nosubkey" => just_signkey = value == "1",
-                    "format" => match value {
-                        "ssh" => ssh_format = true,
-                        other => anyhow::bail!("Unknown format value in receipt: '{}'", other),
-                    },
-                    "created" => {
-                        created = value
-                            .parse()
-                            .map_err(|_| anyhow::anyhow!("Invalid created value: '{}'", value))?
-                    }
-                    "expires" => {
-                        expires = value
-                            .parse()
-                            .map_err(|_| anyhow::anyhow!("Invalid expires value: '{}'", value))?
-                    }
-                    other => anyhow::bail!("Unknown receipt option: '{}'", other),
-                }
-            } else {
+            let Some((key, value)) = field.split_once('=') else {
                 anyhow::bail!("Invalid receipt field (expected key=value): '{}'", field);
+            };
+            match key {
+                "argon" => match value {
+                    "rfc9106" => rfc9106 = true,
+                    other => anyhow::bail!("Unknown argon value in receipt: '{}'", other),
+                },
+                "auth" => auth_subkey = parse_flag(key, value)?,
+                "signauth" => sign_auth = parse_flag(key, value)?,
+                "nosubkey" => just_signkey = parse_flag(key, value)?,
+                "format" => match value {
+                    "ssh" => ssh_format = true,
+                    other => anyhow::bail!("Unknown format value in receipt: '{}'", other),
+                },
+                "created" => {
+                    created = value
+                        .parse()
+                        .map_err(|_| anyhow::anyhow!("Invalid created value: '{}'", value))?
+                }
+                "expires" => {
+                    expires = Some(
+                        value
+                            .parse()
+                            .map_err(|_| anyhow::anyhow!("Invalid expires value: '{}'", value))?,
+                    )
+                }
+                other => anyhow::bail!("Unknown receipt option: '{}'", other),
             }
         }
 
-        validate_timestamps(created, expires)?;
+        if !ssh_format {
+            crate::pgp::validate_timestamps(created, expires)?;
+        }
 
         if auth_subkey && algorithm != KeyAlgorithm::Hkdf {
             anyhow::bail!("Invalid receipt: auth=1 requires the hkdf algorithm");
@@ -336,11 +315,11 @@ impl Receipt {
         if self.just_signkey {
             cmd.push_str(" -j");
         }
-        if self.created != DEFAULT_CREATED {
+        if self.created != DEFAULT_CREATION_TIMESTAMP {
             cmd.push_str(&format!(" -d {}", self.created));
         }
-        if self.expires != 0 {
-            cmd.push_str(&format!(" -y {}", self.expires));
+        if let Some(expires) = self.expires {
+            cmd.push_str(&format!(" -y {}", expires));
         }
         if self.ssh_format {
             cmd.push_str(" -f ssh -o key.ssh");
@@ -378,17 +357,16 @@ impl Receipt {
             lines.push("Encrypt key:  not generated (--just-signkey)".to_string());
         }
 
-        let created_str = if self.created == DEFAULT_CREATED {
+        let created_str = if self.created == DEFAULT_CREATION_TIMESTAMP {
             "2009-01-03T18:15:05Z (Bitcoin genesis)".to_string()
         } else {
             format!("{}", self.created)
         };
         lines.push(format!("Created:      {}", created_str));
 
-        let expires_str = if self.expires == 0 {
-            "never".to_string()
-        } else {
-            format!("{}", self.expires)
+        let expires_str = match self.expires {
+            None => "never".to_string(),
+            Some(expires) => format!("{}", expires),
         };
         lines.push(format!("Expires:      {}", expires_str));
         lines.push(format!("User ID:      {}", self.user_id));
@@ -406,29 +384,31 @@ mod tests {
     use super::*;
 
     fn basic_receipt() -> Receipt {
-        Receipt::new(
-            SeedFormat::Bip39,
-            PassRole::WithPass,
-            KeyAlgorithm::Hkdf,
-            /*rfc9106=*/ false,
-            /*auth_subkey=*/ false,
-            /*sign_auth=*/ false,
-            /*just_signkey=*/ false,
-            /*ssh_format=*/ false,
-            "Satoshi Nakamoto <satoshin@gmx.com>".to_string(),
-            DEFAULT_CREATED,
-            None,
-        )
+        Receipt {
+            seed_format: SeedFormat::Bip39,
+            pass_role: PassRole::WithPass,
+            algorithm: KeyAlgorithm::Hkdf,
+            rfc9106: false,
+            auth_subkey: false,
+            sign_auth: false,
+            just_signkey: false,
+            ssh_format: false,
+            created: DEFAULT_CREATION_TIMESTAMP,
+            expires: None,
+            user_id: "Satoshi Nakamoto <satoshin@gmx.com>".to_string(),
+        }
     }
 
     #[test]
-    fn test_encode_default() {
-        let encoded = basic_receipt().encode();
-        assert!(encoded
-            .starts_with("bip39key:1:bip39:withpass:hkdf:Satoshi Nakamoto <satoshin@gmx.com>:"));
-        let checksum = encoded.split(':').next_back().unwrap();
-        assert_eq!(checksum.len(), 4);
-        assert!(checksum.chars().all(|c| c.is_ascii_hexdigit()));
+    fn test_encode_golden() {
+        // Golden value: the exact receipt string (including checksum) for a
+        // default receipt. Any change to the format, field order, or checksum
+        // input breaks recovery of receipts already in the wild, so this
+        // must only ever change together with RECEIPT_VERSION.
+        assert_eq!(
+            basic_receipt().encode(),
+            "bip39key:1:bip39:withpass:hkdf:Satoshi Nakamoto <satoshin@gmx.com>:C957"
+        );
     }
 
     #[test]
@@ -447,74 +427,49 @@ mod tests {
     fn test_roundtrip() {
         let original = basic_receipt();
         let parsed = Receipt::parse(&original.encode()).unwrap();
-        assert_eq!(parsed.seed_format, original.seed_format);
-        assert_eq!(parsed.pass_role, original.pass_role);
-        assert_eq!(parsed.algorithm, original.algorithm);
-        assert_eq!(parsed.user_id, original.user_id);
-        assert_eq!(parsed.created, original.created);
-        assert_eq!(parsed.expires, original.expires);
+        assert_eq!(parsed, original);
     }
 
     #[test]
     fn test_roundtrip_with_options() {
-        let original = Receipt::new(
-            SeedFormat::Electrum,
-            PassRole::NoPass,
-            KeyAlgorithm::Hkdf,
-            /*rfc9106=*/ true,
-            /*auth_subkey=*/ true,
-            /*sign_auth=*/ true,
-            /*just_signkey=*/ false,
-            /*ssh_format=*/ false,
-            "Alice Smith <alice@company.com>".to_string(),
-            1744948062,
-            Some(1745554397),
-        );
+        let original = Receipt {
+            seed_format: SeedFormat::Electrum,
+            pass_role: PassRole::NoPass,
+            algorithm: KeyAlgorithm::Hkdf,
+            rfc9106: true,
+            auth_subkey: true,
+            sign_auth: true,
+            just_signkey: false,
+            ssh_format: false,
+            created: 1744948062,
+            expires: Some(1745554397),
+            user_id: "Alice Smith <alice@company.com>".to_string(),
+        };
         let encoded = original.encode();
         assert!(encoded.contains("argon=rfc9106"));
         assert!(encoded.contains("auth=1"));
         assert!(encoded.contains("signauth=1"));
         assert!(encoded.contains("created=1744948062"));
         assert!(encoded.contains("expires=1745554397"));
-        let parsed = Receipt::parse(&encoded).unwrap();
-        assert_eq!(parsed.seed_format, SeedFormat::Electrum);
-        assert_eq!(parsed.pass_role, PassRole::NoPass);
-        assert_eq!(parsed.algorithm, KeyAlgorithm::Hkdf);
-        assert!(parsed.rfc9106);
-        assert!(parsed.auth_subkey);
-        assert!(parsed.sign_auth);
-        assert!(!parsed.just_signkey);
-        assert_eq!(parsed.user_id, "Alice Smith <alice@company.com>");
-        assert_eq!(parsed.created, 1744948062);
-        assert_eq!(parsed.expires, 1745554397);
+        assert_eq!(Receipt::parse(&encoded).unwrap(), original);
     }
 
     #[test]
     fn test_roundtrip_ssh() {
-        let original = Receipt::new(
-            SeedFormat::Bip39,
-            PassRole::WithPass,
-            KeyAlgorithm::Concat,
-            /*rfc9106=*/ false,
-            /*auth_subkey=*/ false,
-            /*sign_auth=*/ false,
-            /*just_signkey=*/ false,
-            /*ssh_format=*/ true,
-            "Test <t@t.com>".to_string(),
-            DEFAULT_CREATED,
-            None,
-        );
+        let original = Receipt {
+            algorithm: KeyAlgorithm::Concat,
+            ssh_format: true,
+            user_id: "Test <t@t.com>".to_string(),
+            ..basic_receipt()
+        };
         let encoded = original.encode();
         assert!(encoded.contains("format=ssh"));
-        let parsed = Receipt::parse(&encoded).unwrap();
-        assert!(parsed.ssh_format);
-        assert_eq!(parsed.algorithm, KeyAlgorithm::Concat);
+        assert_eq!(Receipt::parse(&encoded).unwrap(), original);
     }
 
     #[test]
     fn test_parse_bad_checksum() {
         let result = Receipt::parse("bip39key:1:bip39:withpass:hkdf:Test <t@t.com>:0000");
-        assert!(result.is_err());
         assert!(result
             .unwrap_err()
             .to_string()
@@ -533,55 +488,64 @@ mod tests {
         assert!(result.is_err());
     }
 
+    fn with_checksum(before: &str) -> String {
+        format!("{before}:{}", Receipt::compute_checksum(before))
+    }
+
     #[test]
     fn test_parse_rejects_auth_without_hkdf() {
-        let before = "bip39key:1:bip39:nopass:xor:auth=1:Alice <a@b.com>";
-        let checksum = Receipt::compute_checksum(before);
-        let err = Receipt::parse(&format!("{before}:{checksum}"))
-            .unwrap_err()
-            .to_string();
+        let err = Receipt::parse(&with_checksum(
+            "bip39key:1:bip39:nopass:xor:auth=1:Alice <a@b.com>",
+        ))
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("hkdf"), "got: {err}");
     }
 
     #[test]
-    fn test_validate_timestamps() {
-        assert!(validate_timestamps(DEFAULT_CREATED, 0).is_ok());
-        assert!(validate_timestamps(0, 0).is_ok());
-        assert!(validate_timestamps(u32::MAX as i64, 0).is_ok());
-        assert!(validate_timestamps(100, 200).is_ok());
-        assert!(validate_timestamps(-1, 0).is_err());
-        assert!(validate_timestamps(u32::MAX as i64 + 1, 0).is_err());
-        assert!(validate_timestamps(200, 100).is_err());
-        assert!(validate_timestamps(0, u32::MAX as i64 + 1).is_err());
+    fn test_parse_rejects_bad_flag_values() {
+        // Flags are only ever written as `=1`; anything else is a
+        // transcription error and must not be silently read as "off".
+        for field in ["auth=0", "auth=yes", "signauth=true", "nosubkey="] {
+            let err = Receipt::parse(&with_checksum(&format!(
+                "bip39key:1:bip39:nopass:hkdf:{field}:Alice <a@b.com>"
+            )))
+            .unwrap_err()
+            .to_string();
+            assert!(err.contains("expected '1'"), "{field}: {err}");
+        }
     }
 
     #[test]
     fn test_parse_rejects_out_of_range_created() {
         // A checksum-valid receipt with an out-of-range timestamp must be
         // rejected at parse time, not panic later in pgp.rs.
-        let before = "bip39key:1:bip39:nopass:hkdf:created=99999999999:Alice <a@b.com>";
-        let checksum = Receipt::compute_checksum(before);
-        let err = Receipt::parse(&format!("{before}:{checksum}"))
-            .unwrap_err()
-            .to_string();
+        let err = Receipt::parse(&with_checksum(
+            "bip39key:1:bip39:nopass:hkdf:created=99999999999:Alice <a@b.com>",
+        ))
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("out of range"), "got: {err}");
     }
 
     #[test]
+    fn test_validate_user_id() {
+        assert!(validate_user_id("Alice <a@b.com>").is_ok());
+        assert!(validate_user_id("").is_err());
+        assert!(validate_user_id("Alice (dept: sales) <a@b.com>").is_err());
+        assert!(validate_user_id("Alice\n<a@b.com>").is_err());
+    }
+
+    #[test]
     fn test_recovery_command() {
-        let r = Receipt::new(
-            SeedFormat::Electrum,
-            PassRole::WithPass,
-            KeyAlgorithm::Hkdf,
-            /*rfc9106=*/ true,
-            /*auth_subkey=*/ true,
-            /*sign_auth=*/ false,
-            /*just_signkey=*/ false,
-            /*ssh_format=*/ false,
-            "Alice <a@b.com>".to_string(),
-            DEFAULT_CREATED,
-            Some(2000000000),
-        );
+        let r = Receipt {
+            seed_format: SeedFormat::Electrum,
+            rfc9106: true,
+            auth_subkey: true,
+            expires: Some(2000000000),
+            user_id: "Alice <a@b.com>".to_string(),
+            ..basic_receipt()
+        };
         assert_eq!(
             r.recovery_command(),
             "bip39key -g hkdf -u \"Alice <a@b.com>\" -s electrum -r --auth-subkey -y 2000000000 -o key.gpg"

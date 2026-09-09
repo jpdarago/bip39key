@@ -29,6 +29,11 @@
 
         cargoLock.lockFile = ./Cargo.lock;
 
+        # The flake source has no .git directory, so build.rs cannot ask git
+        # for the commit. Pass it in for receipt provenance: `self.rev` for a
+        # clean checkout, `dirtyRev` (e.g. "abc123-dirty") otherwise.
+        BIP39KEY_COMMIT = self.rev or self.dirtyRev or "unknown";
+
         # Integration tests need gpg and ssh-keygen
         doCheck = true;
         nativeCheckInputs = with pkgs; [

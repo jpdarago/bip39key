@@ -133,6 +133,25 @@ pub struct Args {
     /// string). The receipt supplies the user ID and all derivation
     /// parameters; only the mnemonic (and passphrase, if used) is prompted.
     /// The regenerated key's fingerprint is checked against the receipt.
-    #[clap(long, value_name = "FILE")]
+    /// Cannot be combined with flags the receipt already supplies.
+    #[clap(
+        long,
+        value_name = "FILE",
+        conflicts_with_all = [
+            "user_id",
+            "seed_format",
+            "algorithm",
+            "use_concatenation",
+            "use_rfc9106_settings",
+            "authorization_for_sign_key",
+            "auth_subkey",
+            "just_signkey",
+            "format",
+            "timestamp",
+            "creation_timestamp",
+            "expiration_timestamp",
+            "skip_passphrase_for_key_material",
+        ]
+    )]
     pub from_receipt: Option<String>,
 }

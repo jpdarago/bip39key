@@ -41,6 +41,12 @@ add a new vector, add it to the `golden_vectors!` table and run
 regenerate existing files when the change in key material is itself the
 intended, released change.
 
+### Receipt tests
+
+`receipt.rs` and `html_receipt.rs` have unit tests in the library.
+`receipt::tests::test_encode_golden` pins the exact receipt string and its
+checksum, so any change to the receipt format must bump the receipt version.
+
 ## Pre-commit Hooks
 
 devenv configures git hooks for `rustfmt` and `clippy`.

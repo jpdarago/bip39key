@@ -42,7 +42,7 @@ hkdf\:"Argon2id of concatenated seed and passphrase, then HKDF-Expand with domai
 '-q+[DEPRECATED! Request seed phrase through an interactive CLI prompt]:INTERACTIVE:(true false)' \
 '--interactive=[DEPRECATED! Request seed phrase through an interactive CLI prompt]:INTERACTIVE:(true false)' \
 '--output-receipt=[Write an HTML recovery receipt to this file. The receipt records the derivation parameters, key fingerprints, and build provenance — but no secrets — so the key can be regenerated from the mnemonic later]:FILE:_default' \
-'--from-receipt=[Regenerate a key from a receipt file (HTML receipt or raw receipt string). The receipt supplies the user ID and all derivation parameters; only the mnemonic (and passphrase, if used) is prompted. The regenerated key'\''s fingerprint is checked against the receipt]:FILE:_default' \
+'(-u --user-id -s --seed-format -g --algorithm -c --use-concatenation -r --use-rfc9106-settings -b --authorization-for-sign-key --auth-subkey -j --just-signkey -f --format -t --timestamp -d --creation-timestamp -y --expiration-timestamp -n --skip-passphrase-for-key-material)--from-receipt=[Regenerate a key from a receipt file (HTML receipt or raw receipt string). The receipt supplies the user ID and all derivation parameters; only the mnemonic (and passphrase, if used) is prompted. The regenerated key'\''s fingerprint is checked against the receipt. Cannot be combined with flags the receipt already supplies]:FILE:_default' \
 '-j[Only output the sign key for PGP]' \
 '--just-signkey[Only output the sign key for PGP]' \
 '-a[Output as armored]' \

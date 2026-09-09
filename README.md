@@ -89,7 +89,8 @@ Options:
           Regenerate a key from a receipt file (HTML receipt or raw receipt string). The
           receipt supplies the user ID and all derivation parameters; only the mnemonic
           (and passphrase, if used) is prompted. The regenerated key's fingerprint is
-          checked against the receipt
+          checked against the receipt. Cannot be combined with flags the receipt already
+          supplies
   -h, --help
           Print help
   -V, --version
@@ -105,7 +106,9 @@ plus the key fingerprints, a QR code of the compact receipt string, and build
 provenance (version, git commit, binary SHA-256, reproducible build
 instructions). It contains **no secrets**: the mnemonic, passphrase, and key
 material are never written to it, so it is safe to store in cloud storage,
-email, or print.
+email, or print. It does tell anyone who reads it exactly how the key was
+derived (and whether a passphrase was involved), so the mnemonic must stay
+secret on its own; the receipt is a recovery aid, not a second factor.
 
 Generate a key and its receipt:
 
@@ -121,12 +124,19 @@ bip39key --from-receipt receipt.html -o key.gpg
 ```
 
 The receipt supplies the user ID and every derivation flag; only the mnemonic
-(and passphrase, if one was used) is needed. The regenerated key's fingerprint
-is checked against the one stored in the receipt, so entering the wrong seed
-phrase or passphrase fails loudly instead of silently producing a different
-key. If the receipt file is lost but the receipt string (or its QR code) was
-saved elsewhere, `--from-receipt` also accepts a file containing just the
-receipt string, e.g. `bip39key:1:bip39:withpass:hkdf:Alice <alice@example.com>:ABCD`.
+(and passphrase, if one was used) is needed. Flags the receipt already covers
+(`-u`, `-g`, `-s`, `-r`, `-b`, `-j`, `-f`, `-d`, `-y`, `-n`, `--auth-subkey`)
+are rejected alongside `--from-receipt` rather than silently ignored. The
+regenerated key's fingerprint is checked against the one stored in the
+receipt, so entering the wrong seed phrase or passphrase fails loudly instead
+of silently producing a different key. If the receipt file is lost but the
+receipt string (or its QR code) was saved elsewhere, `--from-receipt` also
+accepts a file containing just the receipt string, e.g.
+`bip39key:1:bip39:withpass:hkdf:Alice <alice@example.com>:ABCD`. A bare
+receipt string carries no fingerprint, so that path prints a warning and
+cannot verify the result; compare the printed fingerprint yourself. User IDs
+must not contain `:` when a receipt is written, since the receipt string is
+colon-separated.
 
 ## Why BIP39
 

@@ -162,36 +162,40 @@ fn user_id(args: &Args) -> Result<&str> {
         .context("--user-id is required (or use --from-receipt)")
 }
 
+/// A receipt loaded from disk, plus the fingerprints stored alongside it in
+/// an HTML receipt (absent for a raw receipt string) for post-generation
+/// verification.
+struct LoadedReceipt {
+    receipt: receipt::Receipt,
+    fingerprint: Option<String>,
+    subkey_fingerprints: Option<Vec<(String, String)>>,
+}
+
 /// Load a receipt file: either a full HTML receipt or a raw receipt string.
-/// Returns the parsed receipt plus the fingerprints stored in the HTML, when
-/// present, for post-generation verification.
-#[allow(clippy::type_complexity)]
-fn load_receipt(
-    path: &str,
-) -> Result<(
-    receipt::Receipt,
-    Option<String>,
-    Option<Vec<(String, String)>>,
-)> {
+fn load_receipt(path: &str) -> Result<LoadedReceipt> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("Cannot read receipt {}", path))?;
     if content.contains("data-bip39key-receipt") {
         let parsed = html_receipt::parse_html_receipt(&content)?;
-        let rec = receipt::Receipt::parse(&parsed.receipt_string)?;
-        Ok((rec, parsed.fingerprint, parsed.subkey_fingerprints))
+        Ok(LoadedReceipt {
+            receipt: receipt::Receipt::parse(&parsed.receipt_string)?,
+            fingerprint: parsed.fingerprint,
+            subkey_fingerprints: parsed.subkey_fingerprints,
+        })
     } else {
-        let rec = receipt::Receipt::parse(&content)?;
-        Ok((rec, None, None))
+        Ok(LoadedReceipt {
+            receipt: receipt::Receipt::parse(&content)?,
+            fingerprint: None,
+            subkey_fingerprints: None,
+        })
     }
 }
 
 /// Apply the parameters recorded in a receipt. The receipt is authoritative:
-/// it supplies the user ID and every derivation flag, so combining it with
-/// explicit overrides would silently derive a different key.
-fn apply_receipt(args: &mut Args, rec: &receipt::Receipt) -> Result<()> {
-    if args.user_id.is_some() {
-        bail!("--user-id cannot be combined with --from-receipt; the receipt supplies the user ID");
-    }
+/// it supplies the user ID and every derivation flag. Explicit overrides are
+/// rejected by clap (`conflicts_with_all` on `--from-receipt`), since they
+/// would silently derive a different key.
+fn apply_receipt(args: &mut Args, rec: &receipt::Receipt) {
     args.user_id = Some(rec.user_id.clone());
     args.seed_format = rec.seed_format.clone();
     args.algorithm = rec.algorithm.clone();
@@ -207,24 +211,19 @@ fn apply_receipt(args: &mut Args, rec: &receipt::Receipt) -> Result<()> {
     };
     args.creation_timestamp = Some(rec.created);
     args.timestamp = None;
-    args.expiration_timestamp = if rec.expires != 0 {
-        Some(rec.expires)
-    } else {
-        None
-    };
+    args.expiration_timestamp = rec.expires;
     args.skip_passphrase_for_key_material = rec.pass_role == receipt::PassRole::NoPass;
-    Ok(())
 }
 
 /// Compare the regenerated key against the fingerprints stored in the
 /// receipt. A mismatch means the wrong mnemonic or passphrase was entered, or
 /// the receipt was altered.
-fn verify_against_receipt(
-    args: &Args,
-    keys: &Keys,
-    fingerprint: &Option<String>,
-    subkey_fingerprints: &Option<Vec<(String, String)>>,
-) -> Result<()> {
+fn verify_against_receipt(args: &Args, keys: &Keys, loaded: &LoadedReceipt) -> Result<()> {
+    let LoadedReceipt {
+        fingerprint,
+        subkey_fingerprints,
+        ..
+    } = loaded;
     if let Some(expected) = fingerprint {
         let actual = match args.format {
             OutputFormat::Pgp => hex::encode_upper(pgp::key_fingerprint(&keys.sign_key)?),
@@ -286,6 +285,11 @@ fn validate(args: &Args) -> Result<()> {
     if args.format == OutputFormat::Pgp {
         pgp::validate_timestamps(creation_timestamp_secs, args.expiration_timestamp)?;
     }
+    if args.output_receipt.is_some() {
+        // A receipt with a colon in the user ID cannot be parsed back; fail
+        // now rather than after writing an unrecoverable receipt.
+        receipt::validate_user_id(user_id(args)?)?;
+    }
     if args.just_signkey && args.format == OutputFormat::Ssh {
         bail!("Subkey option (--subkey/-s) only works with PGP output format.");
     }
@@ -346,20 +350,19 @@ fn write_receipt(
     let Some(path) = &args.output_receipt else {
         return Ok(());
     };
-    let ssh_format = args.format == OutputFormat::Ssh;
-    let rec = receipt::Receipt::new(
-        args.seed_format.clone(),
+    let rec = receipt::Receipt {
+        seed_format: args.seed_format.clone(),
         pass_role,
-        algorithm.clone(),
-        args.use_rfc9106_settings,
-        args.auth_subkey,
-        args.authorization_for_sign_key,
-        args.just_signkey,
-        ssh_format,
-        user_id(args)?.to_string(),
-        get_creation_timestamp_secs(args),
-        args.expiration_timestamp,
-    );
+        algorithm: algorithm.clone(),
+        rfc9106: args.use_rfc9106_settings,
+        auth_subkey: args.auth_subkey,
+        sign_auth: args.authorization_for_sign_key,
+        just_signkey: args.just_signkey,
+        ssh_format: args.format == OutputFormat::Ssh,
+        created: get_creation_timestamp_secs(args),
+        expires: args.expiration_timestamp,
+        user_id: user_id(args)?.to_string(),
+    };
     let receipt_string = rec.encode();
     let (fingerprint_raw, fingerprint_display, subkey_fingerprints) = match args.format {
         OutputFormat::Pgp => {
@@ -392,12 +395,19 @@ fn main() -> Result<()> {
     console_logln!("Welcome to BIP39Key");
 
     let mut args = Args::parse();
-    let receipt_fingerprints = if let Some(path) = args.from_receipt.clone() {
-        let (rec, fingerprint, subkey_fingerprints) = load_receipt(&path)?;
-        apply_receipt(&mut args, &rec)?;
+    let loaded_receipt = if let Some(path) = args.from_receipt.clone() {
+        let loaded = load_receipt(&path)?;
+        apply_receipt(&mut args, &loaded.receipt);
         console_logln!("Regenerating key from receipt:");
-        console_logln!("{}", rec.display());
-        Some((fingerprint, subkey_fingerprints))
+        console_logln!("{}", loaded.receipt.display());
+        if loaded.fingerprint.is_none() {
+            console_logln!(
+                "WARNING: the receipt carries no fingerprint (raw receipt string), so the \
+                 regenerated key cannot be verified. Compare the fingerprint printed below \
+                 against a trusted copy."
+            );
+        }
+        Some(loaded)
     } else {
         None
     };
@@ -462,8 +472,8 @@ fn main() -> Result<()> {
     }
     .context("Could not build keys")?;
     console_logln!("Done generating key entropy");
-    if let Some((fingerprint, subkey_fingerprints)) = &receipt_fingerprints {
-        verify_against_receipt(&args, &keys, fingerprint, subkey_fingerprints)?;
+    if let Some(loaded) = &loaded_receipt {
+        verify_against_receipt(&args, &keys, loaded)?;
     }
     console_logln!("{}", format_fingerprint(&args, &keys)?);
     output_keys(&args, &keys)?;

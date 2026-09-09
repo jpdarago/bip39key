@@ -1258,6 +1258,37 @@ fn test_receipt_rejects_user_id_override() {
     .unwrap();
     assert!(output.status.success());
 
+    // Every flag the receipt supplies is rejected, not silently overridden.
+    for flags in [
+        ["-u", "Other <other@test.com>"],
+        ["-f", "ssh"],
+        ["-g", "xor"],
+        ["-y", "2100000000"],
+        ["-s", "electrum"],
+    ] {
+        let regen =
+            run_bip39key_raw(BIP39, &[flags[0], flags[1], "--from-receipt", receipt_str]).unwrap();
+        assert!(!regen.status.success(), "{:?} was accepted", flags);
+        let stderr = String::from_utf8_lossy(&regen.stderr);
+        assert!(
+            stderr.contains("cannot be used with"),
+            "{:?}: stderr: {}",
+            flags,
+            stderr
+        );
+    }
+    for flag in ["-j", "-r", "-b", "-n", "--auth-subkey"] {
+        let regen = run_bip39key_raw(BIP39, &[flag, "--from-receipt", receipt_str]).unwrap();
+        assert!(!regen.status.success(), "{} was accepted", flag);
+        let stderr = String::from_utf8_lossy(&regen.stderr);
+        assert!(
+            stderr.contains("cannot be used with"),
+            "{}: stderr: {}",
+            flag,
+            stderr
+        );
+    }
+
     let regen = run_bip39key_raw(
         BIP39,
         &[
@@ -1270,11 +1301,7 @@ fn test_receipt_rejects_user_id_override() {
     .unwrap();
     assert!(!regen.status.success());
     let stderr = String::from_utf8_lossy(&regen.stderr);
-    assert!(
-        stderr.contains("cannot be combined with --from-receipt"),
-        "stderr: {}",
-        stderr
-    );
+    assert!(stderr.contains("cannot be used with"), "stderr: {}", stderr);
 }
 
 #[test]
@@ -1321,4 +1348,244 @@ fn test_ssh_receipt_roundtrip() {
     // The regenerated key is a valid SSH key.
     let keygen = run_ssh_keygen(&fs::read(&key2).unwrap(), "").unwrap();
     assert!(keygen.status.success());
+}
+
+/// Extract the receipt string from an HTML receipt, as a user copying it
+/// from the page (or scanning the QR code) would.
+fn receipt_string_from_html(html: &str) -> String {
+    let start = html.find("data-bip39key-receipt=\"").unwrap() + "data-bip39key-receipt=\"".len();
+    let end = html[start..].find('"').unwrap();
+    html[start..start + end]
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+}
+
+#[test]
+fn test_receipt_withpass_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+    let receipt_str = receipt_path.to_str().unwrap();
+    let key1 = tmp.path().join("key1.gpg");
+    let key2 = tmp.path().join("key2.gpg");
+
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "-g",
+            "hkdf",
+            "-p",
+            "correct horse",
+            "--output-receipt",
+            receipt_str,
+            "-o",
+            key1.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(output.status.success());
+    let html = fs::read_to_string(&receipt_path).unwrap();
+    assert!(html.contains(":withpass:"));
+    assert!(!html.contains("correct horse"));
+
+    // No passphrase at all: refused before deriving anything.
+    let regen = run_bip39key_raw(
+        BIP39,
+        &["--from-receipt", receipt_str, "-o", key2.to_str().unwrap()],
+    )
+    .unwrap();
+    assert!(!regen.status.success());
+    let stderr = String::from_utf8_lossy(&regen.stderr);
+    assert!(
+        stderr.contains("records that a passphrase was used"),
+        "stderr: {}",
+        stderr
+    );
+
+    // Wrong passphrase: derives a different key, caught by the fingerprint.
+    let regen = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            receipt_str,
+            "-p",
+            "wrong horse",
+            "-o",
+            key2.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(!regen.status.success());
+    let stderr = String::from_utf8_lossy(&regen.stderr);
+    assert!(
+        stderr.contains("Fingerprint mismatch"),
+        "stderr: {}",
+        stderr
+    );
+
+    // Right passphrase: succeeds and the key imports into GPG.
+    let regen = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            receipt_str,
+            "-p",
+            "correct horse",
+            "-o",
+            key2.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(
+        regen.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&regen.stderr)
+    );
+    let gpg = Gpg::new();
+    gpg.import(&fs::read(&key2).unwrap(), None, Some("correct horse"));
+    // GPG must agree with the receipt on both the primary and the encrypt
+    // subkey fingerprints.
+    let keysout = gpg.run(&["--with-colons", "--list-keys"], None).unwrap();
+    let gpg_fprs: Vec<String> = String::from_utf8_lossy(&keysout.stdout)
+        .lines()
+        .filter(|l| l.starts_with("fpr:"))
+        .map(|l| l.split(':').nth(9).unwrap().to_string())
+        .collect();
+    let attr = |name: &str| {
+        let marker = format!("{name}=\"");
+        let start = html.find(&marker).unwrap() + marker.len();
+        let end = html[start..].find('"').unwrap();
+        html[start..start + end].to_string()
+    };
+    let receipt_fp = attr("data-bip39key-fingerprint");
+    let encrypt_fp = attr("data-bip39key-subkey-fingerprints")
+        .strip_prefix("encrypt=")
+        .unwrap()
+        .to_string();
+    assert_eq!(gpg_fprs, vec![receipt_fp, encrypt_fp]);
+}
+
+#[test]
+fn test_receipt_raw_string_default_algorithm() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+    let raw_path = tmp.path().join("receipt.txt");
+    let key1 = tmp.path().join("key1.gpg");
+    let key2 = tmp.path().join("key2.gpg");
+
+    // Default algorithm (xor), no passphrase.
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "--output-receipt",
+            receipt_path.to_str().unwrap(),
+            "-o",
+            key1.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(output.status.success());
+    let html = fs::read_to_string(&receipt_path).unwrap();
+    let receipt_string = receipt_string_from_html(&html);
+    assert!(receipt_string.starts_with("bip39key:1:bip39:nopass:xor:"));
+    fs::write(&raw_path, format!("{receipt_string}\n")).unwrap();
+
+    let regen = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            raw_path.to_str().unwrap(),
+            "-o",
+            key2.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(
+        regen.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&regen.stderr)
+    );
+    assert_eq!(fs::read(&key1).unwrap(), fs::read(&key2).unwrap());
+}
+
+#[test]
+fn test_receipt_concat_flag() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+    let receipt_str = receipt_path.to_str().unwrap();
+    let key1 = tmp.path().join("key1.gpg");
+    let key2 = tmp.path().join("key2.gpg");
+
+    // The deprecated -c flag is recorded as the concat algorithm.
+    let output = run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "-c",
+            "--output-receipt",
+            receipt_str,
+            "-o",
+            key1.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(output.status.success());
+    let html = fs::read_to_string(&receipt_path).unwrap();
+    assert!(receipt_string_from_html(&html).starts_with("bip39key:1:bip39:nopass:concat:"));
+
+    let regen = run_bip39key_raw(
+        BIP39,
+        &["--from-receipt", receipt_str, "-o", key2.to_str().unwrap()],
+    )
+    .unwrap();
+    assert!(
+        regen.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&regen.stderr)
+    );
+    assert_eq!(fs::read(&key1).unwrap(), fs::read(&key2).unwrap());
+}
+
+#[test]
+fn test_receipt_rejects_colon_in_user_id() {
+    let tmp = TempDir::new().unwrap();
+    let receipt_path = tmp.path().join("receipt.html");
+
+    let output = run_bip39key_raw(
+        BIP39,
+        &[
+            "-u",
+            "Alice (dept: sales) <alice@example.com>",
+            "-g",
+            "hkdf",
+            "--output-receipt",
+            receipt_path.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("must not contain ':'"),
+        "stderr: {}",
+        stderr
+    );
+    // Rejected before anything was written.
+    assert!(!receipt_path.exists());
+
+    // Without a receipt the same user ID is still fine.
+    let output = run_bip39key_raw(
+        BIP39,
+        &[
+            "-u",
+            "Alice (dept: sales) <alice@example.com>",
+            "-g",
+            "hkdf",
+        ],
+    )
+    .unwrap();
+    assert!(output.status.success());
 }

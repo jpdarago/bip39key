@@ -109,7 +109,7 @@ Do not add the passphrase as extra entropy. If set, the passphrase will only be 
 Write an HTML recovery receipt to this file. The receipt records the derivation parameters, key fingerprints, and build provenance — but no secrets — so the key can be regenerated from the mnemonic later
 .TP
 \fB\-\-from\-receipt\fR \fI<FILE>\fR
-Regenerate a key from a receipt file (HTML receipt or raw receipt string). The receipt supplies the user ID and all derivation parameters; only the mnemonic (and passphrase, if used) is prompted. The regenerated key\*(Aqs fingerprint is checked against the receipt
+Regenerate a key from a receipt file (HTML receipt or raw receipt string). The receipt supplies the user ID and all derivation parameters; only the mnemonic (and passphrase, if used) is prompted. The regenerated key\*(Aqs fingerprint is checked against the receipt. Cannot be combined with flags the receipt already supplies
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)
