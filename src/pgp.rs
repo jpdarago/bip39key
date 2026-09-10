@@ -347,15 +347,18 @@ fn output_encrypted_secret_key(
     output_as_packet(PacketType::PrivateSignKey, cursor.get_ref(), out)
 }
 
-pub fn key_fingerprint(key: &SignKey) -> Result<Vec<u8>> {
+// OpenPGP v4 fingerprint: SHA-1 over 0x99, the two-octet packet length, and
+// the public key packet body (RFC 4880 section 12.2).
+fn v4_fingerprint(public_key_payload: &[u8]) -> Result<Vec<u8>> {
     let mut hasher = sha1::Sha1::new();
-    let mut cursor = ByteCursor::new(Vec::with_capacity(256));
-    output_public_key(key, &mut cursor)?;
-    let packet = cursor.get_ref();
-    let without_header = &packet[2..];
-    hasher.update([0x99, 0, without_header.len() as u8]);
-    hasher.update(without_header);
+    let length: u16 = public_key_payload.len().try_into()?;
+    hasher.update([0x99, (length >> 8) as u8, (length & 0xFF) as u8]);
+    hasher.update(public_key_payload);
     Ok(hasher.finalize().to_vec())
+}
+
+pub fn key_fingerprint(key: &SignKey) -> Result<Vec<u8>> {
+    v4_fingerprint(&public_key_payload(key)?)
 }
 
 fn output_self_signature(key: &SignKey, user_id: &UserId, out: &mut ByteCursor) -> Result<()> {
@@ -596,6 +599,39 @@ pub fn output_public_as_packets<W: Write>(
     Ok(())
 }
 
+/// Validate creation/expiration timestamps against the limits imposed by the
+/// OpenPGP v4 packet format, which stores the creation time as a u32 and the
+/// expiration as a u32 delta from creation.
+///
+/// Without this, an out-of-range value flows into the packet writers above and
+/// panics on `try_into().unwrap()` after the expensive Argon2id derivation has
+/// already run.
+pub fn validate_timestamps(created: i64, expires: Option<i64>) -> Result<()> {
+    if created < 0 || created > u32::MAX as i64 {
+        anyhow::bail!(
+            "Creation timestamp out of range (0..={}): {}",
+            u32::MAX,
+            created
+        );
+    }
+    if let Some(expires) = expires {
+        if expires < created {
+            anyhow::bail!(
+                "Expiration timestamp {} is before creation timestamp {}",
+                expires,
+                created
+            );
+        }
+        if expires - created > u32::MAX as i64 {
+            anyhow::bail!(
+                "Expiration delta exceeds the OpenPGP u32 limit ({} seconds)",
+                u32::MAX
+            );
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -739,5 +775,17 @@ mod tests {
             padded.extend_from_slice(&data);
             prop_assert_eq!(mpi_encode(&padded), mpi_encode(&data));
         }
+    }
+
+    #[test]
+    fn test_validate_timestamps() {
+        assert!(validate_timestamps(1231006505, None).is_ok());
+        assert!(validate_timestamps(0, None).is_ok());
+        assert!(validate_timestamps(u32::MAX as i64, None).is_ok());
+        assert!(validate_timestamps(100, Some(200)).is_ok());
+        assert!(validate_timestamps(-1, None).is_err());
+        assert!(validate_timestamps(u32::MAX as i64 + 1, None).is_err());
+        assert!(validate_timestamps(200, Some(100)).is_err());
+        assert!(validate_timestamps(0, Some(u32::MAX as i64 + 1)).is_err());
     }
 }
