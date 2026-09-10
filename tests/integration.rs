@@ -1111,3 +1111,32 @@ fn base64_decode(input: &str) -> Vec<u8> {
     }
     out
 }
+
+#[test]
+fn test_rejects_timestamps_outside_openpgp_range() {
+    // Out-of-range timestamps used to panic in pgp.rs after the Argon2id
+    // run; they must now be rejected up front with a clean error.
+    for (flags, expected) in [
+        (vec!["-d", "5000000000"], "out of range"),
+        (vec!["-y", "6000000000"], "exceeds the OpenPGP u32 limit"),
+    ] {
+        let mut args = vec!["-u", "Satoshi Nakamoto <satoshin@gmx.com>", "-g", "hkdf"];
+        args.extend(flags.iter());
+        let output = cmd(env!("CARGO_BIN_EXE_bip39key"), &args)
+            .stdin_bytes(BIP39.join(" ").into_bytes())
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(expected), "{:?}: stderr: {}", flags, stderr);
+        assert!(
+            !stderr.contains("panicked"),
+            "{:?}: stderr: {}",
+            flags,
+            stderr
+        );
+    }
+}

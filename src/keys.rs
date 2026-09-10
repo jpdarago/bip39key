@@ -2,6 +2,12 @@ use crate::types::*;
 use hkdf::Hkdf;
 use sha2::Sha256;
 
+/// Default key creation time: the timestamp of the Bitcoin genesis block. Any
+/// timestamp would work but this one is fairly recent, well established, and
+/// stored in a decentralized database. GPG includes it in the fingerprint, so
+/// it must never change.
+pub const DEFAULT_CREATION_TIMESTAMP: i64 = 1231006505;
+
 pub struct UserId {
     pub user_id: String,
 }

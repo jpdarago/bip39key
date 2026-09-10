@@ -10,11 +10,6 @@ use std::io::BufWriter;
 use std::io::IsTerminal;
 use std::io::Read;
 
-// Default creation time: timestamp of the Bitcoin genesis block. Any timestamp would
-// work but this one is fairly recent, well established, and stored in a decentralized
-// database.
-const CREATION_TIMESTAMP: i64 = 1231006505;
-
 fn write_keys<W: std::io::Write>(
     args: &Args,
     keys: &Keys,
@@ -158,7 +153,7 @@ fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
 fn get_creation_timestamp_secs(args: &Args) -> i64 {
     args.creation_timestamp
         .or(args.timestamp)
-        .unwrap_or(CREATION_TIMESTAMP)
+        .unwrap_or(DEFAULT_CREATION_TIMESTAMP)
 }
 
 fn validate(args: &Args) -> Result<()> {
@@ -183,6 +178,11 @@ fn validate(args: &Args) -> Result<()> {
                 creation_timestamp_secs
             );
         }
+    }
+    // Enforce the OpenPGP v4 u32 limits, which would otherwise panic in
+    // pgp.rs after the expensive Argon2id derivation has already run.
+    if args.format == OutputFormat::Pgp {
+        pgp::validate_timestamps(creation_timestamp_secs, args.expiration_timestamp)?;
     }
     if args.just_signkey && args.format == OutputFormat::Ssh {
         bail!("Subkey option (--subkey/-s) only works with PGP output format.");
