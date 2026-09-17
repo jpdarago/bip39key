@@ -159,16 +159,55 @@ jobs:
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-      # Every asset is published here, from a single job. Uploading from the
-      # five parallel build jobs made GitHub answer concurrent uploads to the
-      # same release with 500 "Error creating asset temp dir", which left
-      # v1.7.0 and v1.8.0 with archives missing and signatures orphaned.
-      - name: Upload all release assets
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            final/bip39key-*
-            final/SHA256SUMS
-            final/SHA256SUMS.sig
+      # Every asset is published here, from a single job, one at a time.
+      # GitHub answers concurrent asset uploads to the same release with
+      # 500 "Error creating asset temp dir". softprops/action-gh-release
+      # fires all its uploads at once, so it hit this even from one job; it
+      # left v1.7.0 with 9 of 12 assets and v1.8.0 with 7, signatures
+      # orphaned from missing archives. gh uploads one file per call, which
+      # lets us serialize and retry.
+      - name: Publish release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd final
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" --notes "bip39key $TAG"
+          fi
+          for asset in bip39key-* SHA256SUMS SHA256SUMS.sig; do
+            uploaded=0
+            for attempt in 1 2 3 4 5; do
+              if gh release upload "$TAG" "$asset" \
+                   --repo "$GITHUB_REPOSITORY" --clobber; then
+                echo "uploaded $asset"
+                uploaded=1
+                break
+              fi
+              echo "attempt $attempt for $asset failed; retrying"
+              sleep $((attempt * 5))
+            done
+            if [ "$uploaded" -ne 1 ]; then
+              echo "FAILED to upload $asset after 5 attempts"
+              exit 1
+            fi
+          done
+
+      # A release missing an archive or a signature is worse than no release,
+      # so confirm what actually landed rather than trusting the uploads.
+      - name: Verify the published release is complete
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          published=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets[].name' | sort)
+          echo "$published"
+          expected=$(cd final && ls bip39key-* SHA256SUMS SHA256SUMS.sig | sort)
+          if [ "$published" != "$expected" ]; then
+            echo "Published assets do not match what was built:"
+            diff <(echo "$expected") <(echo "$published") || true
+            exit 1
+          fi
+          echo "All $(echo "$expected" | wc -l) assets published."
