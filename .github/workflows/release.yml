@@ -12,6 +12,9 @@ jobs:
   build:
     runs-on: ${{ matrix.os }}
     strategy:
+      # A transient upload failure in one target must not cancel the other
+      # four: finalize needs every target present in the same run.
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -94,15 +97,6 @@ jobs:
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-      - name: Upload archive and signature
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            dist/bip39key-${{ matrix.target }}.${{ matrix.archive_ext }}
-            dist/bip39key-${{ matrix.target }}.${{ matrix.archive_ext }}.sig
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Upload build artifact for finalize step
         uses: actions/upload-artifact@v4
         with:
@@ -120,12 +114,35 @@ jobs:
         with:
           path: dist
 
-      - name: Flatten and generate SHA256SUMS
+      - name: Flatten archives and signatures
         run: |
           mkdir -p final
-          find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} final/ \;
+          find dist -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.sig' \) \
+            -exec cp {} final/ \;
+
+      - name: Check every target built
+        run: |
           cd final
-          sha256sum * > SHA256SUMS
+          missing=0
+          for name in \
+              bip39key-x86_64-unknown-linux-musl.tar.gz \
+              bip39key-aarch64-unknown-linux-musl.tar.gz \
+              bip39key-x86_64-apple-darwin.tar.gz \
+              bip39key-aarch64-apple-darwin.tar.gz \
+              bip39key-x86_64-pc-windows-msvc.zip; do
+            for path in "$name" "$name.sig"; do
+              if [ ! -f "$path" ]; then
+                echo "MISSING $path"
+                missing=1
+              fi
+            done
+          done
+          exit "$missing"
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd final
+          sha256sum bip39key-* > SHA256SUMS
 
       - name: Import GPG key
         run: echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
@@ -142,10 +159,15 @@ jobs:
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-      - name: Upload SHA256SUMS and signature
+      # Every asset is published here, from a single job. Uploading from the
+      # five parallel build jobs made GitHub answer concurrent uploads to the
+      # same release with 500 "Error creating asset temp dir", which left
+      # v1.7.0 and v1.8.0 with archives missing and signatures orphaned.
+      - name: Upload all release assets
         uses: softprops/action-gh-release@v1
         with:
           files: |
+            final/bip39key-*
             final/SHA256SUMS
             final/SHA256SUMS.sig
         env:
