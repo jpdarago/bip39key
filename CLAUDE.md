@@ -25,6 +25,22 @@ Tests come in two layers. `tests/integration.rs` exercises the binary end-to-end
 
 Unit and property tests live in `#[cfg(test)]` modules inside the library (`src/pgp.rs`, `src/ssh.rs`, `src/seed.rs`, `src/passphrase.rs`) and run in microseconds, since they test the pure encoders rather than key derivation. `proptest` covers packet length headers, MPI encoding, the armor CRC-24, and the OpenSSH length-prefix framing and padding. Prefer adding coverage here when the behavior under test does not need a derived key.
 
+### Golden vectors
+
+`test/golden/*.golden` pins the exact bytes bip39key produces for each
+combination of flags, covering both PGP and SSH across every algorithm, seed
+format, subkey layout, and timestamp setting. Passphrase-protected secret
+output is not pinned (S2K and bcrypt draw a random salt each run); those
+combinations pin the deterministic *public* key instead, which still detects
+any change in how the passphrase feeds derivation.
+
+**A diff in `test/golden/` is a breaking change, not a test failure to fix.**
+Those bytes are the keys existing users regenerate from their seed phrase. To
+add a new vector, add it to the `golden_vectors!` table and run
+`BIP39KEY_UPDATE_GOLDEN=1 cargo test --release --test integration`; only
+regenerate existing files when the change in key material is itself the
+intended, released change.
+
 ## Pre-commit Hooks
 
 devenv configures git hooks for `rustfmt` and `clippy`.
