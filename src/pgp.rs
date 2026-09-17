@@ -599,27 +599,145 @@ pub fn output_public_as_packets<W: Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
-    // Encode a packet with a body of `length` bytes and decode the length
-    // back from its header, per RFC 4880 section 4.2.2.
-    fn roundtrip_packet_length(length: usize) -> usize {
-        let mut cursor = ByteCursor::new(vec![]);
-        output_as_packet(PacketType::UserId, &vec![0u8; length], &mut cursor).unwrap();
-        let bytes = cursor.into_inner();
+    // Strip leading zero bytes, the way an MPI body is defined.
+    fn strip_leading_zeroes(data: &[u8]) -> &[u8] {
+        let mut slice = data;
+        while !slice.is_empty() && slice[0] == 0 {
+            slice = &slice[1..];
+        }
+        slice
+    }
+
+    /// Bit length of a big-endian integer, computed by locating the highest set
+    /// bit rather than by counting leading zeroes, so it is an independent check
+    /// on what mpi_encode declares.
+    fn bit_length(data: &[u8]) -> usize {
+        for (index, byte) in data.iter().enumerate() {
+            if *byte != 0 {
+                let trailing_bytes = data.len() - index - 1;
+                let highest_bit = 8 - byte.leading_zeros() as usize;
+                return trailing_bytes * 8 + highest_bit;
+            }
+        }
+        0
+    }
+
+    /// Decode a new-format packet header, returning the body length it declares
+    /// and the number of header octets it occupies (RFC 4880 section 4.2.2).
+    fn parse_packet_header(bytes: &[u8]) -> (usize, usize) {
+        assert_eq!(bytes[0] & 0xc0, 0xc0, "not a new-format packet header");
         match bytes[1] {
-            0..=191 => bytes[1] as usize,
-            192..=223 => (((bytes[1] - 192) as usize) << 8) + bytes[2] as usize + 192,
-            255 => u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]) as usize,
-            _ => panic!("unexpected length encoding"),
+            0..=191 => (bytes[1] as usize, 2),
+            192..=223 => (
+                (((bytes[1] - 192) as usize) << 8) + bytes[2] as usize + 192,
+                3,
+            ),
+            255 => (
+                u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]) as usize,
+                6,
+            ),
+            // 224..=254 signal partial body lengths, which this encoder never
+            // emits and GPG would interpret as a much shorter packet.
+            other => panic!("unexpected length octet {other}"),
         }
     }
 
+    /// Encode a packet with a `length`-byte body and assert that the header
+    /// declares the right length *and* is sized so the body starts where the
+    /// declared length says it does.
+    fn assert_packet_roundtrips(length: usize) {
+        let body: Vec<u8> = (0..length).map(|i| (i % 251) as u8).collect();
+        let mut cursor = ByteCursor::new(vec![]);
+        output_as_packet(PacketType::UserId, &body, &mut cursor).unwrap();
+        let bytes = cursor.into_inner();
+
+        let (declared, header_length) = parse_packet_header(&bytes);
+        assert_eq!(declared, length, "body of {length} declared as {declared}");
+        assert_eq!(
+            bytes.len(),
+            header_length + length,
+            "header of {header_length} octets misplaces a {length} byte body"
+        );
+        assert_eq!(&bytes[header_length..], &body[..]);
+    }
+
     #[test]
-    fn test_packet_length_encoding() {
+    fn test_packet_length_encoding_boundaries() {
+        // The one/two/five octet header thresholds and the values either side.
         for length in [
             0, 1, 191, 192, 193, 255, 256, 300, 447, 448, 1000, 8383, 8384, 70000,
         ] {
-            assert_eq!(roundtrip_packet_length(length), length);
+            assert_packet_roundtrips(length);
+        }
+    }
+
+    // Packet bodies as large as a user ID or a signature subpacket can get.
+    proptest! {
+        #[test]
+        fn prop_packet_length_roundtrips(length in 0usize..100_000) {
+            assert_packet_roundtrips(length);
+        }
+    }
+
+    // CRC-24/OPENPGP, from the CRC catalogue: polynomial 0x864CFB, initial
+    // value 0xB704CE, no reflection, no final xor. The check value over the
+    // ASCII digits "123456789" is external ground truth for the armor trailer.
+    #[test]
+    fn test_armor_checksum_known_vectors() {
+        assert_eq!(armor_checksum(b""), 0xB704CE);
+        assert_eq!(armor_checksum(b"123456789"), 0x21CF02);
+    }
+
+    proptest! {
+        // The armor trailer is written as exactly three octets, so a checksum
+        // wider than 24 bits would be silently truncated.
+        #[test]
+        fn prop_armor_checksum_fits_in_24_bits(
+            data in proptest::collection::vec(any::<u8>(), 0..2048),
+        ) {
+            prop_assert!(armor_checksum(&data) <= 0xFFFFFF);
+        }
+
+        #[test]
+        fn prop_checksum_is_sum_mod_65536(
+            data in proptest::collection::vec(any::<u8>(), 0..2048),
+        ) {
+            let expected = data.iter().map(|b| *b as u64).sum::<u64>() % 65536;
+            prop_assert_eq!(checksum(&data) as u64, expected);
+        }
+
+        #[test]
+        fn prop_mpi_declares_correct_bit_length(
+            data in proptest::collection::vec(any::<u8>(), 0..96),
+        ) {
+            let encoded = mpi_encode(&data);
+            let declared = ((encoded[0] as usize) << 8) | encoded[1] as usize;
+            prop_assert_eq!(declared, bit_length(&data));
+            prop_assert_eq!(encoded.len() - 2, declared.div_ceil(8));
+        }
+
+        #[test]
+        fn prop_mpi_body_is_input_without_leading_zeroes(
+            data in proptest::collection::vec(any::<u8>(), 0..96),
+        ) {
+            let encoded = mpi_encode(&data);
+            prop_assert_eq!(&encoded[2..], strip_leading_zeroes(&data));
+        }
+
+        // Leading zero bytes carry no value, so they must not change the
+        // encoding. This is the input class fixed vectors never cover: every
+        // real caller passes a 32 byte key, and roughly one key in 256 starts
+        // with a zero byte.
+        #[test]
+        fn prop_mpi_ignores_leading_zeroes(
+            zeroes in 0usize..8,
+            data in proptest::collection::vec(any::<u8>(), 0..64),
+        ) {
+            let mut padded = vec![0u8; zeroes];
+            padded.extend_from_slice(&data);
+            prop_assert_eq!(mpi_encode(&padded), mpi_encode(&data));
         }
     }
 }

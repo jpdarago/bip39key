@@ -66,7 +66,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: clippy
-          args: -- -D warnings
+          args: --all-targets -- -D warnings
 
   audit:
     name: Security Audit
@@ -99,8 +99,8 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Run integration tests
+      - name: Run unit and integration tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --release --test integration
+          args: --release

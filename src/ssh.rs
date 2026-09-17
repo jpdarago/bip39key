@@ -156,3 +156,59 @@ pub fn output_public_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<
     out.write_all(&[0x0a])?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        // openssh-key-v1 pads the private section up to the cipher block size.
+        // ssh-keygen rejects the key outright if the length is not a multiple
+        // of the block size, or if the filler is not 1, 2, 3, ... .
+        #[test]
+        fn prop_pad_reaches_a_block_multiple(
+            padding in 1usize..=64,
+            content in proptest::collection::vec(any::<u8>(), 0..256),
+        ) {
+            let original = content.clone();
+            let mut padded = content;
+            pad(padding, &mut padded);
+
+            prop_assert_eq!(padded.len() % padding, 0);
+            prop_assert!(padded.len() >= original.len());
+            prop_assert!(padded.len() - original.len() < padding);
+            prop_assert_eq!(&padded[..original.len()], &original[..]);
+            for (index, byte) in padded[original.len()..].iter().enumerate() {
+                prop_assert_eq!(*byte as usize, index + 1);
+            }
+        }
+
+        // Every field in the openssh format is a length prefixed byte string.
+        #[test]
+        fn prop_put_bytes_roundtrips(
+            data in proptest::collection::vec(any::<u8>(), 0..1024),
+        ) {
+            let mut cursor = ByteCursor::new(vec![]);
+            put_bytes(&data, &mut cursor).unwrap();
+            let bytes = cursor.into_inner();
+
+            let declared = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            prop_assert_eq!(declared as usize, data.len());
+            prop_assert_eq!(&bytes[4..], &data[..]);
+        }
+
+        #[test]
+        fn prop_put_string_roundtrips(text in ".{0,256}") {
+            let mut cursor = ByteCursor::new(vec![]);
+            put_string(&text, &mut cursor).unwrap();
+            let bytes = cursor.into_inner();
+
+            let declared = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            // The prefix counts bytes, not characters, so multi byte text must
+            // not be truncated at the character count.
+            prop_assert_eq!(declared as usize, text.len());
+            prop_assert_eq!(&bytes[4..], text.as_bytes());
+        }
+    }
+}
