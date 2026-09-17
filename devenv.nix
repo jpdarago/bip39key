@@ -41,6 +41,6 @@
   };
 
   enterTest = ''
-    cargo test --release --test integration
+    cargo test --release
   '';
 }

@@ -37,4 +37,5 @@ clap_mangen = "0.2"
 
 [dev-dependencies]
 duct = "1"
+proptest = "1"
 tempfile = "3"

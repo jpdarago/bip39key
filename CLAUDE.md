@@ -12,14 +12,18 @@ This project uses [Nix](https://nixos.org/) with [devenv](https://devenv.sh/) fo
 
 ```bash
 cargo build --release                    # Build release binary
-cargo clippy -- -D warnings              # Lint
+cargo clippy --all-targets -- -D warnings # Lint (test code included)
 cargo fmt --all -- --check               # Format check
 cargo fmt                                # Auto-format
-cargo test --release --test integration  # Run integration tests
-devenv test                              # Run integration tests (via devenv)
+cargo test --release                     # Run the whole suite
+cargo test --release --lib               # Unit and property tests only (fast)
+cargo test --release --test integration  # Integration tests only
+devenv test                              # Run the whole suite (via devenv)
 ```
 
-There are no Rust unit tests. All tests are integration tests in `tests/integration.rs` that exercise the binary end-to-end against GPG and ssh-keygen. Golden test files (`test/message-*.gpg`) contain encrypted messages that must decrypt correctly with known seed/passphrase combos.
+Tests come in two layers. `tests/integration.rs` exercises the binary end-to-end against GPG and ssh-keygen; these are slow, because each one pays for a real Argon2id derivation (4.0s on the default config, 1.6s on RFC 9106). Golden test files (`test/message-*.gpg`) contain encrypted messages that must decrypt correctly with known seed/passphrase combos.
+
+Unit and property tests live in `#[cfg(test)]` modules inside the library (`src/pgp.rs`, `src/ssh.rs`, `src/seed.rs`, `src/passphrase.rs`) and run in microseconds, since they test the pure encoders rather than key derivation. `proptest` covers packet length headers, MPI encoding, the armor CRC-24, and the OpenSSH length-prefix framing and padding. Prefer adding coverage here when the behavior under test does not need a derived key.
 
 ## Pre-commit Hooks
 
@@ -27,6 +31,7 @@ devenv configures git hooks for `rustfmt` and `clippy`.
 
 ## Architecture
 
+- **`lib.rs`** — Library root. The modules below live here so tests can exercise them in process; `main.rs` is a thin wrapper over it.
 - **`main.rs`** — CLI entry point (clap). Parses args, reads seed (stdin/file/interactive prompt), gets passphrase, generates keys, writes output.
 - **`keys.rs`** — Core key derivation. `Keys::new_with_concat` (preferred) and `Keys::new_with_xor` (legacy) run Argon2id to expand seed+passphrase into 64 bytes, split into sign key (first 32) and encrypt key (last 32). `KeySettings` holds all derivation parameters.
 - **`pgp.rs`** — OpenPGP v4 packet serialization. Handles packet encoding, MPI format, S2K passphrase encryption (AES-256-CFB), self-signatures, subkey binding signatures, and ASCII armor output. Implements RFC 4880 directly without external PGP libraries.
