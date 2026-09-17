@@ -16,6 +16,7 @@ pub fn is_input_interactive() -> bool {
     *IS_INPUT_INTERACTIVE.get_or_init(|| io::stdin().is_terminal())
 }
 
+#[macro_export]
 macro_rules! console_logln {
     ($($arg:tt)*) => {
         if $crate::console::is_output_interactive() {
