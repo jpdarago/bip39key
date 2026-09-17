@@ -1,16 +1,7 @@
-#[macro_use]
-mod console;
-mod keys;
-mod passphrase;
-mod pgp;
-mod seed;
-mod ssh;
-mod types;
-
-mod cli;
-use crate::keys::*;
-use crate::types::*;
-use cli::{Args, KeyAlgorithm, OutputFormat};
+use bip39key::cli::{Args, KeyAlgorithm, OutputFormat};
+use bip39key::keys::*;
+use bip39key::types::*;
+use bip39key::{console, console_logln, passphrase, pgp, seed, ssh};
 
 use anyhow::{bail, Context};
 use clap::Parser;
