@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH bip39key 1  "bip39key 1.7.0" 
+.TH bip39key 1  "bip39key 1.8.0" 
 .SH NAME
 bip39key \- Generate deterministic OpenPGP and OpenSSH keys from BIP39/Electrum mnemonic seed phrases
 .SH SYNOPSIS
@@ -111,7 +111,7 @@ Print help (see a summary with \*(Aq\-h\*(Aq)
 \fB\-V\fR, \fB\-\-version\fR
 Print version
 .SH VERSION
-v1.7.0
+v1.8.0
 .SH "KEY DERIVATION"
 The seed phrase (BIP39 or Electrum) is expanded from 128\-256 bits to 512 bits
 using Argon2id, with the user ID as the salt. If a passphrase is provided, it

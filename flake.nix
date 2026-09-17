@@ -23,7 +23,7 @@
       # Static musl build (reproducible, portable)
       bip39key = pkgs.pkgsStatic.rustPlatform.buildRustPackage {
         pname = "bip39key";
-        version = "1.7.0";
+        version = "1.8.0";
 
         src = ./.;
 
