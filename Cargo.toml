@@ -1,6 +1,6 @@
 [package]
 name = "bip39key"
-version = "1.6.0"
+version = "1.7.0"
 edition = "2021"
 description = "Generate deterministic OpenPGP and OpenSSH keys from BIP39/Electrum mnemonic seed phrases"
 
