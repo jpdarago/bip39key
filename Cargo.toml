@@ -21,6 +21,9 @@ hkdf = "0.12"
 hmac = "0.12.1"
 inquire = "0.6.2"
 pbkdf2 = { version = "0.12.2", features = ["simple"] }
+# QR code generation for receipts. No default features: the SVG and terminal
+# renderers are hand-rolled in html_receipt.rs, so the image crate is unused.
+qrcode = { version = "0.14", default-features = false }
 rand = { version = "0.8.5", features = ["getrandom"] }
 rust-argon2 = "2.0.0"
 sha1 = "0.10.0"

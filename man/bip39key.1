@@ -4,13 +4,13 @@
 .SH NAME
 bip39key \- Generate deterministic OpenPGP and OpenSSH keys from BIP39/Electrum mnemonic seed phrases
 .SH SYNOPSIS
-\fBbip39key\fR <\fB\-u\fR|\fB\-\-user\-id\fR> [\fB\-i\fR|\fB\-\-input\-filename\fR] [\fB\-o\fR|\fB\-\-output\-filename\fR] [\fB\-d\fR|\fB\-\-creation\-timestamp\fR] [\fB\-y\fR|\fB\-\-expiration\-timestamp\fR] [\fB\-j\fR|\fB\-\-just\-signkey\fR] [\fB\-f\fR|\fB\-\-format\fR] [\fB\-a\fR|\fB\-\-armor\fR] [\fB\-k\fR|\fB\-\-public\-key\fR] [\fB\-p\fR|\fB\-\-passphrase\fR] [\fB\-e\fR|\fB\-\-pinentry\fR] [\fB\-s\fR|\fB\-\-seed\-format\fR] [\fB\-g\fR|\fB\-\-algorithm\fR] [\fB\-q\fR|\fB\-\-interactive\fR] [\fB\-r\fR|\fB\-\-use\-rfc9106\-settings\fR] [\fB\-b\fR|\fB\-\-authorization\-for\-sign\-key\fR] [\fB\-\-auth\-subkey\fR] [\fB\-n\fR|\fB\-\-skip\-passphrase\-for\-key\-material\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
+\fBbip39key\fR [\fB\-u\fR|\fB\-\-user\-id\fR] [\fB\-i\fR|\fB\-\-input\-filename\fR] [\fB\-o\fR|\fB\-\-output\-filename\fR] [\fB\-d\fR|\fB\-\-creation\-timestamp\fR] [\fB\-y\fR|\fB\-\-expiration\-timestamp\fR] [\fB\-j\fR|\fB\-\-just\-signkey\fR] [\fB\-f\fR|\fB\-\-format\fR] [\fB\-a\fR|\fB\-\-armor\fR] [\fB\-k\fR|\fB\-\-public\-key\fR] [\fB\-p\fR|\fB\-\-passphrase\fR] [\fB\-e\fR|\fB\-\-pinentry\fR] [\fB\-s\fR|\fB\-\-seed\-format\fR] [\fB\-g\fR|\fB\-\-algorithm\fR] [\fB\-q\fR|\fB\-\-interactive\fR] [\fB\-r\fR|\fB\-\-use\-rfc9106\-settings\fR] [\fB\-b\fR|\fB\-\-authorization\-for\-sign\-key\fR] [\fB\-\-auth\-subkey\fR] [\fB\-n\fR|\fB\-\-skip\-passphrase\-for\-key\-material\fR] [\fB\-\-output\-receipt\fR] [\fB\-\-from\-receipt\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] 
 .SH DESCRIPTION
 Generate deterministic OpenPGP and OpenSSH keys from BIP39/Electrum mnemonic seed phrases
 .SH OPTIONS
 .TP
 \fB\-u\fR, \fB\-\-user\-id\fR \fI<USER_ID>\fR
-RFC 2822 of the user, e.g. "User <user@email.com>"
+RFC 2822 of the user, e.g. "User <user@email.com>". Required unless \-\-from\-receipt is set
 .TP
 \fB\-i\fR, \fB\-\-input\-filename\fR \fI<INPUT_FILENAME>\fR
 Filename from which to read the mnemonic words
@@ -104,6 +104,12 @@ Generate a separate authentication subkey (requires \-\-algorithm hkdf)
 .TP
 \fB\-n\fR, \fB\-\-skip\-passphrase\-for\-key\-material\fR
 Do not add the passphrase as extra entropy. If set, the passphrase will only be used to encrypt the PGP or SSH key contents, and the key material itself will be generated from the seed and the user id
+.TP
+\fB\-\-output\-receipt\fR \fI<FILE>\fR
+Write an HTML recovery receipt to this file. The receipt records the derivation parameters, key fingerprints, and build provenance — but no secrets — so the key can be regenerated from the mnemonic later
+.TP
+\fB\-\-from\-receipt\fR \fI<FILE>\fR
+Regenerate a key from a receipt file (HTML receipt or raw receipt string). The receipt supplies the user ID and all derivation parameters; only the mnemonic (and passphrase, if used) is prompted. The regenerated key\*(Aqs fingerprint is checked against the receipt. Cannot be combined with flags the receipt already supplies
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help (see a summary with \*(Aq\-h\*(Aq)

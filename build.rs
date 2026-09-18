@@ -6,9 +6,57 @@ use std::path::Path;
 
 include!("src/cli.rs");
 
+fn git(args: &[&str]) -> Option<String> {
+    std::process::Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+/// `HEAD` as a full hash, with `-dirty` appended when tracked files have
+/// uncommitted changes. A receipt must not claim a clean commit reproduces a
+/// binary that was built from modified sources.
+fn git_commit() -> Option<String> {
+    let head = git(&["rev-parse", "HEAD"])?;
+    let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+        .is_some_and(|status| !status.is_empty());
+    Some(if dirty { format!("{head}-dirty") } else { head })
+}
+
 fn main() -> std::io::Result<()> {
     println!("cargo:rerun-if-changed=src/cli.rs");
     println!("cargo:rerun-if-changed=build.rs");
+
+    // Embed the git commit hash at compile time for receipt provenance. An
+    // explicit BIP39KEY_COMMIT environment variable wins over git: builds from
+    // a source tree without .git (Nix sandbox, source tarballs) can inject the
+    // commit and still produce an identical binary.
+    let commit = std::env::var("BIP39KEY_COMMIT")
+        .ok()
+        .filter(|c| !c.is_empty())
+        .or_else(git_commit)
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=BIP39KEY_COMMIT={}", commit);
+    println!("cargo:rerun-if-env-changed=BIP39KEY_COMMIT");
+    println!(
+        "cargo:rustc-env=BIP39KEY_TARGET={}",
+        std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string())
+    );
+    // Re-run when HEAD moves or when tracked sources change, so that the
+    // dirty marker below tracks the working tree rather than the last build.
+    for path in [
+        ".git/HEAD",
+        ".git/refs/",
+        ".git/packed-refs",
+        ".git/index",
+        "src",
+        "Cargo.toml",
+        "Cargo.lock",
+    ] {
+        println!("cargo:rerun-if-changed={path}");
+    }
 
     let mut cmd = Args::command();
     cmd = cmd.name("bip39key");
