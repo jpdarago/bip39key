@@ -34,6 +34,12 @@ jobs:
   version-check:
     name: Version Check
     runs-on: ubuntu-latest
+    # Not on the daily schedule. check-version.sh compares Cargo.toml against
+    # the latest tag, and a release deliberately leaves main mismatched between
+    # the version bump and the tag push. A scheduled run landing in that window
+    # fails every morning with a red X nobody can act on, which is how people
+    # learn to ignore the job this schedule was added for.
+    if: github.event_name != 'schedule'
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
