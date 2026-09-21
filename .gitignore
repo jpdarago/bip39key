@@ -1,6 +1,7 @@
 /target
 NOTES.html
-.cargo
+.cargo/*
+!.cargo/audit.toml
 *.txt
 .direnv
 # Nix

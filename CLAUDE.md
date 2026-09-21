@@ -41,6 +41,31 @@ add a new vector, add it to the `golden_vectors!` table and run
 regenerate existing files when the change in key material is itself the
 intended, released change.
 
+## Dependency auditing
+
+Three things run in CI and can be run locally:
+
+```bash
+cargo audit --deny warnings              # advisories; config in .cargo/audit.toml
+cargo deny check licenses bans sources   # license, duplicate and source policy
+cargo build --locked                     # any command: resolve exactly Cargo.lock
+```
+
+`cargo audit` exits 0 on `unsound`, `unmaintained` and `yanked` advisories by
+default, which is why CI passes `--deny warnings`. Advisories that genuinely
+cannot affect bip39key go in `.cargo/audit.toml` with a written reason; an entry
+without one should not be accepted. The audit also runs on a daily schedule,
+because advisories appear against dependencies that have not changed.
+
+`cargo deny` deliberately does not check advisories, since the audit job already
+covers them. It checks what cargo-audit cannot see: license terms, duplicate
+versions (a warning, as some are forced by upstream), and crates from anywhere
+other than crates.io.
+
+Pass `--locked` to every cargo command in CI and in releases. The
+`CARGO_NET_LOCKED` environment variable does **not** do this — it is silently
+ignored and the lockfile gets updated anyway.
+
 ## Pre-commit Hooks
 
 devenv configures git hooks for `rustfmt` and `clippy`.
