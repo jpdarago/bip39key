@@ -1,19 +1,11 @@
 # cargo-audit configuration. CI runs `cargo audit --deny warnings`, so unsound,
 # unmaintained and yanked advisories fail the build alongside vulnerabilities.
 #
-# Every entry in `ignore` must carry a reason explaining why the advisory cannot
-# affect bip39key. Silence here is a deliberate, reviewable decision: if the
-# reasoning stops holding, the ignore has to go.
+# `ignore` is deliberately empty. An advisory with a released fix inside our
+# semver requirements should be fixed by bumping Cargo.lock, not silenced here:
+# suppressing it keeps CI green while release binaries keep shipping the
+# affected crate. Only an advisory with no available fix belongs in this list,
+# and then only with a written reason for why it cannot affect bip39key.
 
 [advisories]
-ignore = [
-    # Unsoundness in anyhow's `Error::downcast_mut()`. bip39key never calls
-    # downcast_mut; anyhow is used only to construct and propagate errors.
-    "RUSTSEC-2026-0190",
-
-    # rand is unsound when a custom logger calls `rand::rng()`. bip39key
-    # installs no logger and never calls rand::rng() or thread_rng(); rand is
-    # used only as `rand::rngs::OsRng.fill_bytes` to draw the S2K and bcrypt
-    # salts in pgp.rs and ssh.rs.
-    "RUSTSEC-2026-0097",
-]
+ignore = []
