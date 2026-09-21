@@ -1,6 +1,9 @@
 use crate::keys::*;
 use crate::types::*;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
+
 use aes::cipher::{AsyncStreamCipher, KeyIvInit};
 use byteorder::{BigEndian, ByteOrder, WriteBytesExt};
 use ed25519_dalek::Signer;
@@ -543,7 +546,7 @@ pub fn output_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) ->
     output_as_packets(keys, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
-    out.write_all(textwrap::fill(&base64::encode(&packets), 64).as_bytes())?;
+    out.write_all(textwrap::fill(&BASE64.encode(&packets), 64).as_bytes())?;
     let mut checksum_cursor = ByteCursor::new(vec![]);
     let checksum = armor_checksum(packets);
     checksum_cursor.write_all(&[
@@ -552,7 +555,7 @@ pub fn output_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) ->
         (checksum & 0xFF) as u8,
     ])?;
     out.write_all(b"\n=")?;
-    out.write_all(base64::encode(checksum_cursor.get_ref()).as_bytes())?;
+    out.write_all(BASE64.encode(checksum_cursor.get_ref()).as_bytes())?;
     out.write_all(b"\n-----END PGP PRIVATE KEY BLOCK-----\n")?;
     Ok(())
 }
@@ -565,7 +568,7 @@ pub fn output_public_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter
     output_public_as_packets(keys, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
-    out.write_all(textwrap::fill(&base64::encode(&packets), 64).as_bytes())?;
+    out.write_all(textwrap::fill(&BASE64.encode(&packets), 64).as_bytes())?;
     let mut checksum_cursor = ByteCursor::new(vec![]);
     let checksum = armor_checksum(packets);
     checksum_cursor.write_all(&[
@@ -574,7 +577,7 @@ pub fn output_public_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter
         (checksum & 0xFF) as u8,
     ])?;
     out.write_all(b"\n=")?;
-    out.write_all(base64::encode(checksum_cursor.get_ref()).as_bytes())?;
+    out.write_all(BASE64.encode(checksum_cursor.get_ref()).as_bytes())?;
     out.write_all(b"\n-----END PGP PUBLIC KEY BLOCK-----\n")?;
     Ok(())
 }

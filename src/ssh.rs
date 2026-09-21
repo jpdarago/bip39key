@@ -1,6 +1,9 @@
 use crate::keys::*;
 use crate::types::*;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine as _;
+
 use aes::cipher::{KeyIvInit, StreamCipher};
 use bcrypt_pbkdf::bcrypt_pbkdf;
 use byteorder::{BigEndian, ByteOrder, LittleEndian, WriteBytesExt};
@@ -129,7 +132,7 @@ pub fn output_secret_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<
         put_ssh_key_without_passphrase(keys, &mut cursor)?;
     }
     // Output as base64 encoded.
-    out.write_all(textwrap::fill(&base64::encode(cursor.get_mut()), 70).as_bytes())?;
+    out.write_all(textwrap::fill(&BASE64.encode(cursor.get_mut()), 70).as_bytes())?;
     out.write_all(b"\n-----END OPENSSH PRIVATE KEY-----\n")?;
     Ok(())
 }
@@ -142,7 +145,7 @@ pub fn key_fingerprint(keys: &Keys) -> Result<String> {
     let hash = sha2::Sha256::digest(cursor.get_ref());
     // ssh-keygen -l prints SHA256 fingerprints in unpadded base64; match it
     // so users can compare the two outputs directly.
-    Ok(base64::encode(hash).trim_end_matches('=').to_string())
+    Ok(BASE64.encode(hash).trim_end_matches('=').to_string())
 }
 
 pub fn output_public_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) -> Result<()> {
@@ -150,7 +153,7 @@ pub fn output_public_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<
     put_string("ssh-ed25519", &mut cursor)?;
     put_bytes(&keys.sign_key.public_key, &mut cursor)?;
     out.write_all(b"ssh-ed25519 ")?;
-    out.write_all(base64::encode(cursor.get_mut()).as_bytes())?;
+    out.write_all(BASE64.encode(cursor.get_mut()).as_bytes())?;
     out.write_all(&[0x20])?;
     out.write_all(keys.user_id.user_id.as_bytes())?;
     out.write_all(&[0x0a])?;
