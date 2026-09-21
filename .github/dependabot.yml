@@ -1,0 +1,24 @@
+version: 2
+
+updates:
+  # Rust dependencies. Grouped so a week of routine patch bumps arrives as one
+  # reviewable PR rather than a dozen, while major bumps stay separate: those
+  # touch APIs and, for the crypto crates, can change derived key material.
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      patch-and-minor:
+        update-types:
+          - minor
+          - patch
+
+  # The workflows' own dependencies. These run with access to the release
+  # signing secrets, so they are part of the supply chain too — and they are
+  # what went stale here: actions-rs was archived in 2023 and still in use.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly

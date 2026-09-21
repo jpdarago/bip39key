@@ -5,9 +5,17 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  # Advisories are published against dependencies that have not changed, so the
+  # audit has to run on a clock rather than only when someone pushes.
+  schedule:
+    - cron: '17 6 * * *'
 
 env:
   CARGO_TERM_COLOR: always
+
+# Least privilege by default; no job here needs to write anything.
+permissions:
+  contents: read
 
 jobs:
   check:
@@ -15,26 +23,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Run cargo check
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
+        run: cargo check --locked
 
   version-check:
     name: Version Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -46,40 +48,52 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
-          override: true
           components: rustfmt, clippy
 
       - name: Run cargo fmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Run cargo clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-targets -- -D warnings
+        run: cargo clippy --locked --all-targets -- -D warnings
 
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
+      # Fails on unsound, unmaintained and yanked advisories as well as
+      # vulnerabilities. Plain `cargo audit` exits 0 on all but the last, so it
+      # reported the anyhow and rand unsoundness advisories while staying green.
+      # Deliberate exceptions belong in audit.toml with a written reason.
       - name: Install cargo-audit
-        run: cargo install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
 
       - name: Run cargo audit
-        run: cargo audit
+        run: cargo audit --deny warnings
+
+  deny:
+    name: Licenses, Bans and Sources
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+
+      # Advisories are covered by the audit job above; this covers the things
+      # cargo-audit cannot see: license terms, duplicate versions, and crates
+      # pulled from anywhere other than crates.io.
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check licenses bans sources
 
   tests:
     strategy:
@@ -90,17 +104,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Run unit and integration tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --release
+        run: cargo test --locked --release

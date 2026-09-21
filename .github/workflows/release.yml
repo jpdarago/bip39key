@@ -60,9 +60,9 @@ jobs:
           BIN_NAME=bip39key
           TARGET=${{ matrix.target }}
           if [[ "${{ matrix.static }}" == "true" ]]; then
-            cross build --release --target=$TARGET
+            cross build --locked --release --target=$TARGET
           else
-            cargo build --release --target=$TARGET
+            cargo build --locked --release --target=$TARGET
           fi
 
       - name: Rename and compress binary

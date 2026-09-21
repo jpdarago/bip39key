@@ -1,0 +1,41 @@
+# cargo-deny policy. CI runs `cargo deny check licenses bans sources`.
+#
+# Advisories are deliberately NOT checked here: the audit job runs cargo-audit
+# against the same database, and running one tool for that is enough. What
+# cargo-deny adds is the part cargo-audit cannot see — license terms, duplicate
+# versions, and where crates are fetched from.
+
+[licenses]
+# Every license currently in the tree, all permissive. A dependency arriving
+# under anything else (notably copyleft) fails the build and has to be an
+# explicit decision, because bip39key ships as a redistributed binary.
+allow = [
+    "Apache-2.0",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions are a warning, not an error: several are forced by
+# dependencies we do not control (base64 0.21 via rust-argon2, rand 0.8 via
+# tiny-bip39). Reviewing the list when it grows is the point, not blocking.
+multiple-versions = "warn"
+# A `*` version requirement accepts whatever the registry serves next, which
+# is exactly the shape a malicious release needs. Ban them, path deps included.
+wildcards = "deny"
+allow-wildcard-paths = false
+
+[sources]
+# Anything not from crates.io — a git dependency or a private registry — must
+# be an explicit decision, not something that slips in via a transitive bump.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
