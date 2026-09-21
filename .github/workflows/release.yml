@@ -51,9 +51,16 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # This job holds the GPG signing key, and cross is what executes the musl
+      # build. Installed unpinned it resolved to whatever crates.io served at
+      # tag-push time and built its own dependency tree unlocked, which is the
+      # weakest link in a job with secrets in the environment. Use a verified
+      # prebuilt binary at a pinned version instead.
       - name: Install cross (for musl/static targets)
         if: matrix.static
-        run: cargo install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross@0.2.5
 
       - name: Build binary
         run: |
