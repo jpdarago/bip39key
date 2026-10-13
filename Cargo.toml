@@ -26,7 +26,7 @@ pbkdf2 = { version = "0.12.2", features = ["simple"] }
 rand = { version = "0.8.5", features = ["getrandom"] }
 rust-argon2 = "2.0.0"
 sha1 = "0.10.0"
-sha2 = "0.10.2"
+sha2 = "0.11.0"
 strsim = "0.11.1"
 textwrap = "0.16"
 tiny-bip39 = "1.0.0"
