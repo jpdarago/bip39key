@@ -29,15 +29,16 @@
 
         cargoLock.lockFile = ./Cargo.lock;
 
-        # Integration tests need gpg and ssh-keygen
+        # Integration tests need gpg, ssh-keygen and age
         doCheck = true;
         nativeCheckInputs = with pkgs; [
+          age
           gnupg
           openssh
         ];
 
         meta = with pkgs.lib; {
-          description = "Generate an OpenPGP/OpenSSH key from a BIP39 mnemonic";
+          description = "Generate an OpenPGP/OpenSSH/age key from a BIP39 mnemonic";
           homepage    = "https://github.com/jpdarago/bip39key";
           license     = licenses.mit;
           mainProgram = "bip39key";

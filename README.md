@@ -115,7 +115,7 @@ only feeds key derivation. Protect the file accordingly; bip39key creates it
 with mode 0600. The identity file also has no `# created:` line, so that the
 output is deterministic.
 
-The OpenPGP-only flags (`-a`, `-j`, `-b`, `-y`, `--auth-subkey`) and `-n` are
+The OpenPGP-only flags (`-a`, `-j`, `-b`, `-d`, `-y`, `--auth-subkey`) and `-n` are
 rejected with age output.
 
 ## Why BIP39
