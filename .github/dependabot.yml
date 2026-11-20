@@ -10,6 +10,19 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
     groups:
+      # The RustCrypto crates share trait crates (digest, cipher), so a major
+      # bump of one does not compile on its own: sha1, sha2 and cfb-mode each
+      # arrived as a separate, failing PR. Move them as one. This group is
+      # listed first so it takes precedence over patch-and-minor.
+      rustcrypto:
+        patterns:
+          - "aes"
+          - "bcrypt-pbkdf"
+          - "cfb-mode"
+          - "ctr"
+          - "hkdf"
+          - "sha1"
+          - "sha2"
       patch-and-minor:
         update-types:
           - minor

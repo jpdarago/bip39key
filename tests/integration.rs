@@ -81,10 +81,23 @@ impl Gpg {
         let expr = cmd("gpg", &args)
             .env("GNUPGHOME", homedir)
             .stdout_capture()
-            .stderr_capture();
-        match stdin {
+            .stderr_capture()
+            .unchecked();
+        let output = match stdin {
             Some(data) => expr.stdin_bytes(data.to_vec()).run(),
             None => expr.run(),
+        }?;
+        if output.status.success() {
+            Ok(output)
+        } else {
+            // duct's own error drops stderr, which is the only place gpg says
+            // why it failed.
+            Err(io::Error::other(format!(
+                "gpg {:?} exited with {}:\n{}",
+                flags,
+                output.status,
+                String::from_utf8_lossy(&output.stderr)
+            )))
         }
     }
 

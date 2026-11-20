@@ -103,9 +103,20 @@ jobs:
 
   tests:
     strategy:
+      # One OS failing must not cancel the other: GPG differs per runner, and
+      # seeing whether a failure is platform-specific is the first question.
+      fail-fast: false
       matrix:
         # TODO: Add windows once GPG issue is fixed.
-        os: [ubuntu-latest, macos-latest]
+        #
+        # Pinned to 24.04: ubuntu-latest moved to 26.04, which ships
+        # libgcrypt 1.12.0. Its key check wrongly rejects about half of all
+        # valid Curve25519 secret keys (upstream T8094, fixed in 1.12.1), so
+        # gpg-agent fails to decrypt with some of our test keys ("Bad secret
+        # key"). Upstream 1.11.3, 1.12.1 and 1.12.4 all decrypt with the same
+        # keys. See "Known issues" in README.md. Move back once 26.04 ships
+        # libgcrypt >= 1.12.1.
+        os: [ubuntu-24.04, macos-latest]
     name: Tests
     runs-on: ${{ matrix.os }}
     steps:
