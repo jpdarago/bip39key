@@ -77,7 +77,7 @@ devenv configures git hooks for `rustfmt` and `clippy`.
 - **`keys.rs`** — Core key derivation. `Keys::new_with_concat` (preferred) and `Keys::new_with_xor` (legacy) run Argon2id to expand seed+passphrase into 64 bytes, split into sign key (first 32) and encrypt key (last 32). `KeySettings` holds all derivation parameters.
 - **`pgp.rs`** — OpenPGP v4 packet serialization. Handles packet encoding, MPI format, S2K passphrase encryption (AES-256-CFB), self-signatures, subkey binding signatures, and ASCII armor output. Implements RFC 4880 directly without external PGP libraries.
 - **`ssh.rs`** — OpenSSH private/public key serialization. Handles the `openssh-key-v1` format with optional AES-256-CTR encryption via bcrypt-pbkdf.
-- **`age.rs`** — age identity (`AGE-SECRET-KEY-1...`) and recipient (`age1...`) output. Reuses the X25519 encrypt key, Bech32 (BIP 173) encoded by hand. Always plaintext: age identities have no passphrase protection.
+- **`age.rs`** — age identity (`AGE-SECRET-KEY-1...`) and recipient (`age1...`) output. Uses its own X25519 key from HKDF info `bip39key-age-v1` (hkdf only), Bech32 (BIP 173) encoded by hand. Always plaintext: age identities have no passphrase protection.
 - **`seed.rs`** — BIP39 and Electrum seed phrase parsing/validation. Includes interactive prompt with autocomplete and Levenshtein-based typo suggestions. Wordlist bundled from `resources/bip39.txt`, overridable via `WORDLIST_BIP39` env var.
 - **`passphrase.rs`** — Passphrase input via pinentry subprocess (configurable with `BIP39_PINENTRY` env var) or interactive terminal prompt.
 - **`console.rs`** — Terminal detection and `console_logln!` macro that suppresses output when not on a TTY. `NO_INTERACTIVE_OUTPUT=1` forces non-interactive mode.

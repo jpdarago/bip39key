@@ -28,7 +28,7 @@ Expiration timestamp (as unix timestamp in seconds). If unset, the keys do not e
 Only output the sign key for PGP
 .TP
 \fB\-f\fR, \fB\-\-format\fR \fI<FORMAT>\fR [default: pgp]
-Output format: PGP, SSH or age. age output is the PGP encryption subkey as an X25519 identity, and is never passphrase protected
+Output format: PGP, SSH or age. age output requires \-\-algorithm hkdf, uses its own X25519 key separate from the PGP subkeys, and is never passphrase protected
 .br
 
 .br

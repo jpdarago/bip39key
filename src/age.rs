@@ -1,8 +1,10 @@
 //! age (https://age-encryption.org) X25519 identity and recipient output.
 //!
-//! age has no signing keys, so this reuses the X25519 encryption key that
-//! already backs the OpenPGP ECDH subkey: the same seed and flags give the
-//! same Curve25519 key in both formats. The encoding is Bech32 (BIP 173, not
+//! The X25519 key comes from its own HKDF-Expand info string
+//! (`bip39key-age-v1`), so it is independent of the OpenPGP encryption subkey:
+//! leaking one does not leak the other. This needs `--algorithm hkdf`; xor and
+//! concat only produce the 64 bytes the sign and encrypt keys already use. The
+//! encoding is Bech32 (BIP 173, not
 //! Bech32m), as specified by age:
 //!
 //! - recipient: HRP `age`, lowercase, e.g. `age1...`
@@ -85,20 +87,20 @@ pub fn bech32_encode(hrp: &str, data: &[u8]) -> String {
     result
 }
 
-fn encrypt_key(keys: &Keys) -> Result<&EncryptKey> {
-    keys.encrypt_key
+fn age_key(keys: &Keys) -> Result<&EncryptKey> {
+    keys.age_key
         .as_ref()
-        .context("age output needs the encryption key, which was not generated")
+        .context("age output needs the age key, which is only derived with --algorithm hkdf")
 }
 
-/// The `age1...` recipient string for the derived encryption key.
+/// The `age1...` recipient string for the derived age key.
 pub fn recipient(keys: &Keys) -> Result<String> {
-    Ok(bech32_encode(RECIPIENT_HRP, &encrypt_key(keys)?.public_key))
+    Ok(bech32_encode(RECIPIENT_HRP, &age_key(keys)?.public_key))
 }
 
-/// The `AGE-SECRET-KEY-1...` identity string for the derived encryption key.
+/// The `AGE-SECRET-KEY-1...` identity string for the derived age key.
 pub fn identity(keys: &Keys) -> Result<String> {
-    Ok(bech32_encode(IDENTITY_HRP, &encrypt_key(keys)?.private_key).to_uppercase())
+    Ok(bech32_encode(IDENTITY_HRP, &age_key(keys)?.private_key).to_uppercase())
 }
 
 /// Write an age identity file. Unlike age-keygen this has no `# created:`
@@ -188,16 +190,17 @@ mod tests {
         }
 
         #[test]
-        fn age_keys_encode_the_x25519_pair(secret in any::<[u8; 32]>()) {
-            let encrypt_key = EncryptKey::new(&secret, DEFAULT_CREATION_TIMESTAMP, None).unwrap();
+        fn age_output_encodes_the_age_key(secret in any::<[u8; 32]>()) {
+            let age_key = EncryptKey::new(&secret, DEFAULT_CREATION_TIMESTAMP, None).unwrap();
             let sign_key = SignKey::new(&secret, DEFAULT_CREATION_TIMESTAMP, None, false).unwrap();
-            let expected_public = encrypt_key.public_key;
-            let expected_private = encrypt_key.private_key;
+            let expected_public = age_key.public_key;
+            let expected_private = age_key.private_key;
             let keys = Keys {
                 user_id: UserId { user_id: String::new() },
                 sign_key,
-                encrypt_key: Some(encrypt_key),
+                encrypt_key: None,
                 auth_key: None,
+                age_key: Some(age_key),
                 passphrase: None,
             };
 
