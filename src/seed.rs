@@ -89,18 +89,22 @@ fn check_word_is_valid(input: &str) -> Option<String> {
     }
 }
 
+/// Validate one line of prompt input. A line may hold several words (a paste)
+/// or none at all (an empty line ends collection; see `collect_words`), so
+/// each word is checked on its own and an empty line is valid.
 fn validate(input: &str) -> std::result::Result<Validation, CustomUserError> {
-    if let Some(closest) = check_word_is_valid(input) {
-        Ok(Validation::Invalid(
-            format!(
-                "Word {} is not in the dictionary, maybe you meant {}?",
-                input, closest
-            )
-            .into(),
-        ))
-    } else {
-        Ok(Validation::Valid)
+    for word in input.split_whitespace() {
+        if let Some(closest) = check_word_is_valid(word) {
+            return Ok(Validation::Invalid(
+                format!(
+                    "Word {} is not in the dictionary, maybe you meant {}?",
+                    word, closest
+                )
+                .into(),
+            ));
+        }
     }
+    Ok(Validation::Valid)
 }
 
 pub fn decode_phrase(seed_format: &SeedFormat, phrase: &str) -> Result<Vec<u8>> {
@@ -216,6 +220,46 @@ mod tests {
 
     const GOLDEN_24: &str = "void come effort suffer camp survey warrior heavy shoot primary \
          clutch crush open amazing screen patrol group space point ten exist slush involve unfold";
+
+    // The prompt runs `validate` on every line before `collect_words` sees it,
+    // so anything collect_words is meant to accept must also pass validation.
+    // Previously an empty line (the only way to finish a seed shorter than 24
+    // words) and a pasted multi-word line were both rejected here.
+
+    #[test]
+    fn test_validate_accepts_empty_line() {
+        assert!(matches!(validate("").unwrap(), Validation::Valid));
+        assert!(matches!(validate("   ").unwrap(), Validation::Valid));
+    }
+
+    #[test]
+    fn test_validate_accepts_pasted_phrase() {
+        assert!(matches!(validate(GOLDEN_24).unwrap(), Validation::Valid));
+    }
+
+    #[test]
+    fn test_validate_names_the_bad_word_in_a_paste() {
+        let result = validate("abandon fatigeu ability").unwrap();
+        let Validation::Invalid(message) = result else {
+            panic!("a misspelled word must be rejected");
+        };
+        let message = format!("{message:?}");
+        assert!(message.contains("Word fatigeu "), "{message}");
+        assert!(message.contains("fatigue"), "{message}");
+    }
+
+    #[test]
+    fn test_every_line_collect_words_accepts_validates() {
+        let lines = ["abandon", "ability able", ""];
+        for line in lines {
+            assert!(
+                matches!(validate(line).unwrap(), Validation::Valid),
+                "{line:?}"
+            );
+        }
+        let words = collect_words(scripted(&lines)).unwrap();
+        assert_eq!(words, ["abandon", "ability", "able"]);
+    }
 
     #[test]
     fn test_collect_24_words_one_at_a_time() {
