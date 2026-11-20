@@ -220,6 +220,11 @@ fn validate(args: &Args) -> Result<()> {
         if args.expiration_timestamp.is_some() {
             bail!("--expiration-timestamp (-y) does not work with age output: age keys do not expire.");
         }
+        if args.creation_timestamp.is_some() || args.timestamp.is_some() {
+            bail!(
+                "--creation-timestamp (-d) does not work with age output: age keys carry no timestamp."
+            );
+        }
     }
     if args.passphrase.is_some() && args.pinentry {
         bail!("One of --passphrase/--pinentry must be set at a time.");

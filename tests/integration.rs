@@ -1310,6 +1310,8 @@ fn test_age_rejects_pgp_only_flags() {
         (vec!["-b"], "--authorization-for-sign-key"),
         (vec!["-n", "-p", PASS], "--skip-passphrase-for-key-material"),
         (vec!["-y", "1800000000"], "--expiration-timestamp"),
+        (vec!["-d", "1700000000"], "--creation-timestamp"),
+        (vec!["-t", "1700000000"], "--creation-timestamp"),
     ] {
         let mut args = vec!["-u", "Satoshi Nakamoto <satoshin@gmx.com>", "-f", "age"];
         args.extend(flags.iter());
