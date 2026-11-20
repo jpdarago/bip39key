@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-bip39key generates deterministic OpenPGP (EdDSA/ECDH Curve25519) and OpenSSH (Ed25519) keys from BIP39 or Electrum mnemonic seed phrases. It uses Argon2id to expand the seed entropy, with the user ID as salt. An optional passphrase can be combined via concatenation (`-c`, preferred) or XOR (legacy) before key derivation.
+bip39key generates deterministic OpenPGP (EdDSA/ECDH Curve25519), OpenSSH (Ed25519) and age (X25519) keys from BIP39 or Electrum mnemonic seed phrases. It uses Argon2id to expand the seed entropy, with the user ID as salt. An optional passphrase can be combined via concatenation (`-c`, preferred) or XOR (legacy) before key derivation.
 
 ## Build & Development
 
@@ -23,12 +23,12 @@ devenv test                              # Run the whole suite (via devenv)
 
 Tests come in two layers. `tests/integration.rs` exercises the binary end-to-end against GPG and ssh-keygen; these are slow, because each one pays for a real Argon2id derivation (4.0s on the default config, 1.6s on RFC 9106). Golden test files (`test/message-*.gpg`) contain encrypted messages that must decrypt correctly with known seed/passphrase combos.
 
-Unit and property tests live in `#[cfg(test)]` modules inside the library (`src/pgp.rs`, `src/ssh.rs`, `src/seed.rs`, `src/passphrase.rs`) and run in microseconds, since they test the pure encoders rather than key derivation. `proptest` covers packet length headers, MPI encoding, the armor CRC-24, and the OpenSSH length-prefix framing and padding. Prefer adding coverage here when the behavior under test does not need a derived key.
+Unit and property tests live in `#[cfg(test)]` modules inside the library (`src/pgp.rs`, `src/ssh.rs`, `src/age.rs`, `src/seed.rs`, `src/passphrase.rs`) and run in microseconds, since they test the pure encoders rather than key derivation. `proptest` covers packet length headers, MPI encoding, the armor CRC-24, and the OpenSSH length-prefix framing and padding. Prefer adding coverage here when the behavior under test does not need a derived key.
 
 ### Golden vectors
 
 `test/golden/*.golden` pins the exact bytes bip39key produces for each
-combination of flags, covering both PGP and SSH across every algorithm, seed
+combination of flags, covering PGP, SSH and age across every algorithm, seed
 format, subkey layout, and timestamp setting. Passphrase-protected secret
 output is not pinned (S2K and bcrypt draw a random salt each run); those
 combinations pin the deterministic *public* key instead, which still detects
@@ -77,6 +77,7 @@ devenv configures git hooks for `rustfmt` and `clippy`.
 - **`keys.rs`** — Core key derivation. `Keys::new_with_concat` (preferred) and `Keys::new_with_xor` (legacy) run Argon2id to expand seed+passphrase into 64 bytes, split into sign key (first 32) and encrypt key (last 32). `KeySettings` holds all derivation parameters.
 - **`pgp.rs`** — OpenPGP v4 packet serialization. Handles packet encoding, MPI format, S2K passphrase encryption (AES-256-CFB), self-signatures, subkey binding signatures, and ASCII armor output. Implements RFC 4880 directly without external PGP libraries.
 - **`ssh.rs`** — OpenSSH private/public key serialization. Handles the `openssh-key-v1` format with optional AES-256-CTR encryption via bcrypt-pbkdf.
+- **`age.rs`** — age identity (`AGE-SECRET-KEY-1...`) and recipient (`age1...`) output. Reuses the X25519 encrypt key, Bech32 (BIP 173) encoded by hand. Always plaintext: age identities have no passphrase protection.
 - **`seed.rs`** — BIP39 and Electrum seed phrase parsing/validation. Includes interactive prompt with autocomplete and Levenshtein-based typo suggestions. Wordlist bundled from `resources/bip39.txt`, overridable via `WORDLIST_BIP39` env var.
 - **`passphrase.rs`** — Passphrase input via pinentry subprocess (configurable with `BIP39_PINENTRY` env var) or interactive terminal prompt.
 - **`console.rs`** — Terminal detection and `console_logln!` macro that suppresses output when not on a TTY. `NO_INTERACTIVE_OUTPUT=1` forces non-interactive mode.

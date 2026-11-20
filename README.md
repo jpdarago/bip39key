@@ -1,4 +1,4 @@
-# Generate an OpenPGP/OpenSSH key from a BIP39 mnemonic
+# Generate an OpenPGP/OpenSSH/age key from a BIP39 mnemonic
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![build](https://github.com/jpdarago/bip39key/actions/workflows/rust.yml/badge.svg)
@@ -27,6 +27,7 @@ It can generate either
 * An OpenPGP EdDSA signing key + ECCDH encryption key, both using Curve25519.
 * An OpenPGP EdDSA signing key with Curve25519.
 * An OpenSSH key using EdDSA with Curve25519.
+* An [age](https://age-encryption.org) X25519 identity. See [age keys](#age-keys).
 
 In all cases the tool requires a User ID in [RFC 2822](https://datatracker.ietf.org/doc/html/rfc2822) format.
 
@@ -59,7 +60,9 @@ Options:
   -j, --just-signkey
           Only output the sign key for PGP
   -f, --format <FORMAT>
-          Output format: SSH or PGP [default: pgp] [possible values: pgp, ssh]
+          Output format: PGP, SSH or age. age output is the PGP encryption subkey as an
+          X25519 identity, and is never passphrase protected
+          [default: pgp] [possible values: pgp, ssh, age]
   -a, --armor
           Output as armored
   -k, --public-key
@@ -87,6 +90,33 @@ Options:
   -V, --version
           Print version
 ```
+
+## age keys
+
+`--format age` writes an [age](https://age-encryption.org) identity file, and
+`--format age --public-key` writes the matching `age1...` recipient, as
+`age-keygen -y` would print it:
+
+```
+$ bip39key -u "User <user@email.com>" --algorithm hkdf -f age -o key.txt
+$ bip39key -u "User <user@email.com>" --algorithm hkdf -f age -k
+age1...
+$ age -r age1... secret.txt > secret.txt.age
+$ age -d -i key.txt secret.txt.age
+```
+
+The age key is the same X25519 key as the OpenPGP encryption subkey derived
+from the same seed, passphrase, user ID and `--algorithm`, so it adds no new
+derivation.
+
+Unlike the OpenPGP and SSH output, **the age identity is always written in
+plaintext**. age identity files have no passphrase protection, so a passphrase
+only feeds key derivation. Protect the file accordingly; bip39key creates it
+with mode 0600. The identity file also has no `# created:` line, so that the
+output is deterministic.
+
+The OpenPGP-only flags (`-a`, `-j`, `-b`, `-y`, `--auth-subkey`) and `-n` are
+rejected with age output.
 
 ## Why BIP39
 

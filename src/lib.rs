@@ -1,4 +1,4 @@
-//! Deterministic OpenPGP and OpenSSH key generation from BIP39/Electrum
+//! Deterministic OpenPGP, OpenSSH and age key generation from BIP39/Electrum
 //! mnemonic seed phrases.
 //!
 //! The binary in `main.rs` is a thin CLI wrapper over this library. The split
@@ -10,6 +10,7 @@
 #[macro_use]
 pub mod console;
 
+pub mod age;
 pub mod cli;
 pub mod keys;
 pub mod passphrase;

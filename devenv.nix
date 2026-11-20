@@ -2,6 +2,7 @@
 
 {
   packages = with pkgs; [ 
+    age
     cargo
     clippy
     git

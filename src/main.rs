@@ -1,7 +1,7 @@
 use bip39key::cli::{Args, KeyAlgorithm, OutputFormat};
 use bip39key::keys::*;
 use bip39key::types::*;
-use bip39key::{console, console_logln, passphrase, pgp, seed, ssh};
+use bip39key::{age, console, console_logln, passphrase, pgp, seed, ssh};
 
 use anyhow::{bail, Context};
 use clap::Parser;
@@ -35,6 +35,13 @@ fn write_keys<W: std::io::Write>(
                 ssh::output_public_as_pem(keys, &mut writer)?;
             } else {
                 ssh::output_secret_as_pem(keys, &mut writer)?;
+            }
+        }
+        OutputFormat::Age => {
+            if args.public_key {
+                age::output_public(keys, &mut writer)?;
+            } else {
+                age::output_secret(keys, &mut writer)?;
             }
         }
     };
@@ -187,8 +194,32 @@ fn validate(args: &Args) -> Result<()> {
     if args.just_signkey && args.format == OutputFormat::Ssh {
         bail!("Subkey option (--subkey/-s) only works with PGP output format.");
     }
-    if args.armor && args.format == OutputFormat::Ssh {
+    if args.armor && args.format != OutputFormat::Pgp {
         bail!("Armor option (--armor/-a) only works with PGP output format.");
+    }
+    if args.format == OutputFormat::Age {
+        // age keys are the X25519 encryption key alone: there is no signing
+        // key to restrict to, and no subkeys or capabilities to add.
+        if args.just_signkey {
+            bail!("Subkey option (--just-signkey/-j) only works with PGP output format.");
+        }
+        if args.auth_subkey {
+            bail!("--auth-subkey only works with PGP output format.");
+        }
+        if args.authorization_for_sign_key {
+            bail!("--authorization-for-sign-key (-b) only works with PGP output format.");
+        }
+        // age identity files cannot be passphrase protected, so with -n the
+        // passphrase would do nothing at all.
+        if args.skip_passphrase_for_key_material {
+            bail!(
+                "--skip-passphrase-for-key-material (-n) does not work with age output: \
+                 age keys cannot be passphrase protected, so the passphrase would be unused."
+            );
+        }
+        if args.expiration_timestamp.is_some() {
+            bail!("--expiration-timestamp (-y) does not work with age output: age keys do not expire.");
+        }
     }
     if args.passphrase.is_some() && args.pinentry {
         bail!("One of --passphrase/--pinentry must be set at a time.");
@@ -225,6 +256,7 @@ fn format_fingerprint(args: &Args, keys: &Keys) -> Result<String> {
             let fp = ssh::key_fingerprint(keys)?;
             Ok(format!("SSH fingerprint: SHA256:{}", fp))
         }
+        OutputFormat::Age => Ok(format!("age recipient: {}", age::recipient(keys)?)),
     }
 }
 
@@ -283,5 +315,10 @@ fn main() -> Result<()> {
     .context("Could not build keys")?;
     console_logln!("Done generating key entropy");
     console_logln!("{}", format_fingerprint(&args, &keys)?);
+    if args.format == OutputFormat::Age && !args.public_key {
+        console_logln!(
+            "WARNING: age identities cannot be passphrase protected. The secret key is written in plaintext."
+        );
+    }
     output_keys(&args, &keys)
 }

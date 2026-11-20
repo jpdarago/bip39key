@@ -27,8 +27,8 @@ _bip39key() {
 '--creation-timestamp=[Creation timestamp (as unix timestamp in seconds). If unset, uses the genesis block (1231006505)]:CREATION_TIMESTAMP:_default' \
 '-y+[Expiration timestamp (as unix timestamp in seconds). If unset, the keys do not expire]:EXPIRATION_TIMESTAMP:_default' \
 '--expiration-timestamp=[Expiration timestamp (as unix timestamp in seconds). If unset, the keys do not expire]:EXPIRATION_TIMESTAMP:_default' \
-'-f+[Output format\: SSH or PGP]:FORMAT:(pgp ssh)' \
-'--format=[Output format\: SSH or PGP]:FORMAT:(pgp ssh)' \
+'-f+[Output format\: PGP, SSH or age. age output is the PGP encryption subkey as an X25519 identity, and is never passphrase protected]:FORMAT:(pgp ssh age)' \
+'--format=[Output format\: PGP, SSH or age. age output is the PGP encryption subkey as an X25519 identity, and is never passphrase protected]:FORMAT:(pgp ssh age)' \
 '-p+[Optional passphrase. If set, -e/--pinentry must not be set. See README.md for details]:PASSPHRASE:_default' \
 '--passphrase=[Optional passphrase. If set, -e/--pinentry must not be set. See README.md for details]:PASSPHRASE:_default' \
 '-s+[Seed Format\: BIP39, Electrum]:SEED_FORMAT:(bip39 electrum)' \

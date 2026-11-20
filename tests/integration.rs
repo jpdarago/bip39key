@@ -177,6 +177,39 @@ fn run_ssh_keygen(key_data: &[u8], passphrase: &str) -> io::Result<Output> {
     .run()
 }
 
+// --- age ---
+
+fn run_age_keygen_y(identity: &[u8]) -> io::Result<Output> {
+    let mut f = NamedTempFile::new()?;
+    f.write_all(identity)?;
+    f.flush()?;
+    let path = f.into_temp_path();
+    cmd("age-keygen", &["-y", path.to_str().unwrap()])
+        .stdout_capture()
+        .stderr_capture()
+        .run()
+}
+
+/// Encrypt `plaintext` to `recipient` with the real age binary, then decrypt
+/// it with `identity`, returning the decrypted bytes.
+fn age_round_trip(recipient: &str, identity: &[u8], plaintext: &[u8]) -> Vec<u8> {
+    let dir = TempDir::new().unwrap();
+    let identity_path = dir.path().join("identity.txt");
+    fs::write(&identity_path, identity).unwrap();
+    let ciphertext = cmd("age", &["-r", recipient])
+        .stdin_bytes(plaintext.to_vec())
+        .stdout_capture()
+        .run()
+        .unwrap()
+        .stdout;
+    cmd("age", &["-d", "-i", identity_path.to_str().unwrap()])
+        .stdin_bytes(ciphertext)
+        .stdout_capture()
+        .run()
+        .unwrap()
+        .stdout
+}
+
 // --- bip39key runner ---
 
 fn run_bip39key(bip39: &[&str], userid: &str, flags: &[&str]) -> io::Result<Output> {
@@ -809,6 +842,8 @@ enum Verify {
     PgpPublic,
     SshSecret,
     SshPublic,
+    AgeSecret,
+    AgePublic,
 }
 
 fn golden_vector_path(name: &str) -> PathBuf {
@@ -873,6 +908,29 @@ fn verify_golden_output(verify: Verify, output: &[u8], user_id: &str) {
                 line.ends_with(user_id),
                 "public key line does not carry the user ID as its comment: {line}"
             );
+        }
+        Verify::AgeSecret => {
+            // age-keygen must accept the identity and derive the same
+            // recipient that the "# public key:" comment advertises.
+            let keygen = run_age_keygen_y(output).unwrap();
+            let derived = String::from_utf8_lossy(&keygen.stdout);
+            let text = String::from_utf8_lossy(output);
+            let advertised = text
+                .lines()
+                .find_map(|line| line.strip_prefix("# public key: "))
+                .expect("identity file has no '# public key:' comment");
+            assert_eq!(derived.trim(), advertised);
+            let identity = text.lines().last().unwrap();
+            assert!(
+                identity.starts_with("AGE-SECRET-KEY-1"),
+                "not an age identity line: {identity}"
+            );
+        }
+        Verify::AgePublic => {
+            let line = String::from_utf8_lossy(output);
+            let line = line.trim();
+            assert!(line.starts_with("age1"), "not an age recipient: {line}");
+            assert!(!line.contains('\n'), "recipient output has extra lines");
         }
     }
 }
@@ -1023,6 +1081,16 @@ golden_vectors! {
     golden_ssh_public_hkdf_passphrase(
         BIP39, userid(), ["-f", "ssh", "-p", PASS, "--algorithm", "hkdf", "-k"],
         Verify::SshPublic);
+
+    // age output, which uses only the X25519 encryption half. age identities
+    // have no passphrase protection, so even passphrase secrets are pinned.
+    golden_age_xor_secret(BIP39, userid(), ["-f", "age", "--algorithm", "xor"], Verify::AgeSecret);
+    golden_age_hkdf_secret(
+        BIP39, userid(), ["-f", "age", "--algorithm", "hkdf"], Verify::AgeSecret);
+    golden_age_hkdf_passphrase_secret(
+        BIP39, userid(), ["-f", "age", "-p", PASS, "--algorithm", "hkdf"], Verify::AgeSecret);
+    golden_age_hkdf_public(
+        BIP39, userid(), ["-f", "age", "--algorithm", "hkdf", "-k"], Verify::AgePublic);
 }
 
 // --- Relationships between golden vectors ---
@@ -1151,5 +1219,109 @@ fn test_rejects_timestamps_outside_openpgp_range() {
             flags,
             stderr
         );
+    }
+}
+
+/// Minimal Bech32 decoder (data part only, checksum not verified: age-keygen
+/// already validated these strings), so the test does not reuse the encoder.
+fn bech32_data(input: &str) -> Vec<u8> {
+    const CHARSET: &[u8] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+    let input = input.to_lowercase();
+    let data = &input[input.rfind('1').unwrap() + 1..input.len() - 6];
+    let mut accumulator: u32 = 0;
+    let mut bits = 0;
+    let mut out = Vec::new();
+    for byte in data.bytes() {
+        let value = CHARSET.iter().position(|c| *c == byte).unwrap();
+        accumulator = (accumulator << 5) | value as u32;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((accumulator >> bits) as u8);
+        }
+    }
+    out
+}
+
+#[test]
+fn test_golden_age_matches_pgp_encrypt_subkey() {
+    // age output is documented as the same X25519 key as the PGP encryption
+    // subkey. The subkey's public MPI is 0x40 followed by the native X25519
+    // public key, so it must appear verbatim in the PGP packets.
+    let recipient = String::from_utf8(read_golden("golden_age_hkdf_public")).unwrap();
+    let mut point = vec![0x40];
+    point.extend(bech32_data(recipient.trim()));
+    assert_eq!(point.len(), 33);
+
+    let armored = String::from_utf8(read_golden("golden_pgp_hkdf_armored")).unwrap();
+    let body: String = armored
+        .lines()
+        .skip_while(|line| !line.is_empty())
+        .skip(1)
+        .take_while(|line| !line.starts_with('=') && !line.starts_with("-----END"))
+        .collect();
+    let packets = base64_decode(&body);
+    assert!(
+        packets.windows(point.len()).any(|w| w == point.as_slice()),
+        "the age recipient is not the PGP encryption subkey"
+    );
+}
+
+#[test]
+fn test_golden_age_secret_matches_public() {
+    let secret = String::from_utf8(read_golden("golden_age_hkdf_secret")).unwrap();
+    let public = String::from_utf8(read_golden("golden_age_hkdf_public")).unwrap();
+    assert!(
+        secret.contains(&format!("# public key: {}", public.trim())),
+        "-k printed a different recipient from the identity file"
+    );
+}
+
+#[test]
+fn test_golden_age_passphrase_changes_derived_key() {
+    assert_ne!(
+        read_golden("golden_age_hkdf_passphrase_secret"),
+        read_golden("golden_age_hkdf_secret"),
+        "the passphrase made no difference to the age key"
+    );
+}
+
+#[test]
+fn test_age_encrypt_decrypt_round_trip() {
+    let identity = run_bip39key(BIP39, &userid(), &["-f", "age", "-g", "hkdf", "-r"]).unwrap();
+    let recipient =
+        run_bip39key(BIP39, &userid(), &["-f", "age", "-g", "hkdf", "-r", "-k"]).unwrap();
+    let recipient = String::from_utf8(recipient.stdout).unwrap();
+    let plaintext = b"bip39key age round trip";
+    assert_eq!(
+        age_round_trip(recipient.trim(), &identity.stdout, plaintext),
+        plaintext
+    );
+}
+
+#[test]
+fn test_age_rejects_pgp_only_flags() {
+    // These are rejected in validate(), before the seed is read or Argon2id
+    // runs, so this test is cheap.
+    for (flags, expected) in [
+        (vec!["-a"], "--armor"),
+        (vec!["-j"], "--just-signkey"),
+        (vec!["--auth-subkey", "-g", "hkdf"], "--auth-subkey"),
+        (vec!["-b"], "--authorization-for-sign-key"),
+        (vec!["-n", "-p", PASS], "--skip-passphrase-for-key-material"),
+        (vec!["-y", "1800000000"], "--expiration-timestamp"),
+    ] {
+        let mut args = vec!["-u", "Satoshi Nakamoto <satoshin@gmx.com>", "-f", "age"];
+        args.extend(flags.iter());
+        let output = cmd(env!("CARGO_BIN_EXE_bip39key"), &args)
+            .stdin_bytes(BIP39.join(" ").into_bytes())
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .unwrap();
+        assert!(!output.status.success(), "{flags:?} was accepted");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(expected), "{flags:?}: stderr: {stderr}");
     }
 }
