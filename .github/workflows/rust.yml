@@ -126,5 +126,15 @@ jobs:
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # GPG and ssh-keygen ship on both runner images; age does not. The
+      # integration tests check age output against the real age binaries.
+      - name: Install age (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y age
+
+      - name: Install age (macOS)
+        if: runner.os == 'macOS'
+        run: brew install age
+
       - name: Run unit and integration tests
         run: cargo test --locked --release

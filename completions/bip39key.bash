@@ -78,11 +78,11 @@ _bip39key() {
                     return 0
                     ;;
                 --format)
-                    COMPREPLY=($(compgen -W "pgp ssh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "pgp ssh age" -- "${cur}"))
                     return 0
                     ;;
                 -f)
-                    COMPREPLY=($(compgen -W "pgp ssh" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "pgp ssh age" -- "${cur}"))
                     return 0
                     ;;
                 --passphrase)

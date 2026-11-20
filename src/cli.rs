@@ -5,6 +5,7 @@ use std::fmt;
 pub enum OutputFormat {
     Pgp,
     Ssh,
+    Age,
 }
 
 #[derive(PartialEq, Eq, Clone, clap::ValueEnum, Debug)]
@@ -65,7 +66,8 @@ pub struct Args {
     #[clap(short, long)]
     pub just_signkey: bool,
 
-    /// Output format: SSH or PGP.
+    /// Output format: PGP, SSH or age. age output is the PGP encryption subkey as an
+    /// X25519 identity, and is never passphrase protected.
     #[clap(short, long, default_value = "pgp")]
     pub format: OutputFormat,
 
