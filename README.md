@@ -15,6 +15,10 @@
 > regenerate them, pass `--algorithm xor` explicitly. New keys should use
 > `--algorithm hkdf`.
 
+> :warning: **Ubuntu 26.04 / libgcrypt 1.12.0:** GnuPG built against libgcrypt
+> 1.12.0 can fail to decrypt with keys bip39key generates, reporting
+> `Bad secret key`. Your key is fine. See [Known issues](#known-issues).
+
 Generates a cryptographical key from a [BIP39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki) mnemonic (and, optionally, a
 passphrase).
 
@@ -192,6 +196,37 @@ cp completions/bip39key.zsh $(brew --prefix)/share/zsh/site-functions/_bip39key
 # Manpage
 cp man/bip39key.1 /usr/local/share/man/man1/
 ```
+
+## Known issues
+
+### `Bad secret key` with libgcrypt 1.12.0 (Ubuntu 26.04)
+
+libgcrypt 1.12.0 has a bug in its elliptic-curve code (upstream
+[T8094](https://dev.gnupg.org/T8094), fixed in 1.12.1). Before decrypting,
+gpg-agent asks libgcrypt to check that the secret key matches the public key,
+and 1.12.0 wrongly rejects about half of all valid Curve25519 keys. Decryption
+then fails with:
+
+```
+gpg: public key decryption failed: Bad secret key
+```
+
+The key bip39key generated is correct, and the same seed keeps producing the
+same key. [Sequoia](https://sequoia-pgp.org/), and GnuPG with every other
+libgcrypt version we tested (1.11.3, 1.12.1, 1.12.4), decrypt with it. Whether a particular key hits
+the bug depends on its value, not on how you exported it: adding a passphrase
+does **not** avoid it.
+
+To check whether you are affected, look at the libgcrypt line in:
+
+```bash
+gpg --version
+```
+
+If it says `libgcrypt 1.12.0`, decrypt on a system with a different version
+until your distribution ships 1.12.1 or later. Ubuntu 26.04 currently ships
+1.12.0; Ubuntu 24.04 and macOS (Homebrew) do not. OpenSSH keys are unaffected,
+since OpenSSH does not use libgcrypt.
 
 ## Running tests
 
