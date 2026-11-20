@@ -60,8 +60,8 @@ Options:
   -j, --just-signkey
           Only output the sign key for PGP
   -f, --format <FORMAT>
-          Output format: PGP, SSH or age. age output is the PGP encryption subkey as an
-          X25519 identity, and is never passphrase protected
+          Output format: PGP, SSH or age. age output requires --algorithm hkdf, uses its own
+          X25519 key separate from the PGP subkeys, and is never passphrase protected
           [default: pgp] [possible values: pgp, ssh, age]
   -a, --armor
           Output as armored
@@ -105,9 +105,11 @@ $ age -r age1... secret.txt > secret.txt.age
 $ age -d -i key.txt secret.txt.age
 ```
 
-The age key is the same X25519 key as the OpenPGP encryption subkey derived
-from the same seed, passphrase, user ID and `--algorithm`, so it adds no new
-derivation.
+age output requires `--algorithm hkdf`. The age key is derived with its own
+HKDF info string (`bip39key-age-v1`), so it is independent of the OpenPGP
+encryption subkey from the same seed: leaking one does not leak the other. The
+`xor` and `concat` algorithms cannot derive a separate key, so they are
+rejected with age output.
 
 Unlike the OpenPGP and SSH output, **the age identity is always written in
 plaintext**. age identity files have no passphrase protection, so a passphrase
@@ -155,8 +157,8 @@ the seed and passphrase are combined:
   splits the output at a fixed offset into sign and encrypt keys.
 * **`hkdf`** (recommended for new keys) — Concatenates the seed and passphrase,
   applies Argon2id, then uses HKDF-Expand (RFC 5869) with distinct info strings
-  (`bip39key-sign-v1` and `bip39key-encrypt-v1`) to derive independent sign and
-  encrypt keys. This provides proper domain separation between key types.
+  (`bip39key-sign-v1` and `bip39key-encrypt-v1`, plus `bip39key-age-v1` for age
+  output) to derive independent sign and encrypt keys. This provides proper domain separation between key types.
 
 The passphrase is also used to encrypt the OpenPGP and SSH files themselves. If
 you want to keep that encryption but not use the passphrase as additional entropy,

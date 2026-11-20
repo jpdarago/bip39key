@@ -1082,9 +1082,8 @@ golden_vectors! {
         BIP39, userid(), ["-f", "ssh", "-p", PASS, "--algorithm", "hkdf", "-k"],
         Verify::SshPublic);
 
-    // age output, which uses only the X25519 encryption half. age identities
+    // age output, from its own HKDF info string (hkdf only). age identities
     // have no passphrase protection, so even passphrase secrets are pinned.
-    golden_age_xor_secret(BIP39, userid(), ["-f", "age", "--algorithm", "xor"], Verify::AgeSecret);
     golden_age_hkdf_secret(
         BIP39, userid(), ["-f", "age", "--algorithm", "hkdf"], Verify::AgeSecret);
     golden_age_hkdf_passphrase_secret(
@@ -1244,10 +1243,11 @@ fn bech32_data(input: &str) -> Vec<u8> {
 }
 
 #[test]
-fn test_golden_age_matches_pgp_encrypt_subkey() {
-    // age output is documented as the same X25519 key as the PGP encryption
-    // subkey. The subkey's public MPI is 0x40 followed by the native X25519
-    // public key, so it must appear verbatim in the PGP packets.
+fn test_golden_age_differs_from_pgp_encrypt_subkey() {
+    // The age key has its own HKDF info string, so it must not be the PGP
+    // encryption subkey derived from the same inputs. The subkey's public MPI
+    // is 0x40 followed by the native X25519 public key, so if the keys were
+    // shared that point would appear verbatim in the PGP packets.
     let recipient = String::from_utf8(read_golden("golden_age_hkdf_public")).unwrap();
     let mut point = vec![0x40];
     point.extend(bech32_data(recipient.trim()));
@@ -1261,9 +1261,12 @@ fn test_golden_age_matches_pgp_encrypt_subkey() {
         .take_while(|line| !line.starts_with('=') && !line.starts_with("-----END"))
         .collect();
     let packets = base64_decode(&body);
+    // Guard against the search below passing vacuously: the PGP packets must
+    // contain some 0x40-prefixed point at all.
+    assert!(packets.contains(&0x40));
     assert!(
-        packets.windows(point.len()).any(|w| w == point.as_slice()),
-        "the age recipient is not the PGP encryption subkey"
+        !packets.windows(point.len()).any(|w| w == point.as_slice()),
+        "the age key is the PGP encryption subkey; it must be derived separately"
     );
 }
 
@@ -1306,14 +1309,21 @@ fn test_age_rejects_pgp_only_flags() {
     for (flags, expected) in [
         (vec!["-a"], "--armor"),
         (vec!["-j"], "--just-signkey"),
-        (vec!["--auth-subkey", "-g", "hkdf"], "--auth-subkey"),
+        (vec!["--auth-subkey"], "--auth-subkey"),
         (vec!["-b"], "--authorization-for-sign-key"),
         (vec!["-n", "-p", PASS], "--skip-passphrase-for-key-material"),
         (vec!["-y", "1800000000"], "--expiration-timestamp"),
         (vec!["-d", "1700000000"], "--creation-timestamp"),
         (vec!["-t", "1700000000"], "--creation-timestamp"),
     ] {
-        let mut args = vec!["-u", "Satoshi Nakamoto <satoshin@gmx.com>", "-f", "age"];
+        let mut args = vec![
+            "-u",
+            "Satoshi Nakamoto <satoshin@gmx.com>",
+            "-f",
+            "age",
+            "-g",
+            "hkdf",
+        ];
         args.extend(flags.iter());
         let output = cmd(env!("CARGO_BIN_EXE_bip39key"), &args)
             .stdin_bytes(BIP39.join(" ").into_bytes())
@@ -1325,5 +1335,28 @@ fn test_age_rejects_pgp_only_flags() {
         assert!(!output.status.success(), "{flags:?} was accepted");
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains(expected), "{flags:?}: stderr: {stderr}");
+    }
+}
+
+#[test]
+fn test_age_requires_hkdf() {
+    // Only hkdf can derive a separate age key, so leaving out -g (which
+    // defaults to xor) or choosing another algorithm must fail up front.
+    for flags in [vec![], vec!["-g", "xor"], vec!["-g", "concat"], vec!["-c"]] {
+        let mut args = vec!["-u", "Satoshi Nakamoto <satoshin@gmx.com>", "-f", "age"];
+        args.extend(flags.iter());
+        let output = cmd(env!("CARGO_BIN_EXE_bip39key"), &args)
+            .stdin_bytes(BIP39.join(" ").into_bytes())
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .unwrap();
+        assert!(!output.status.success(), "{flags:?} was accepted");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("requires --algorithm hkdf"),
+            "{flags:?}: stderr: {stderr}"
+        );
     }
 }

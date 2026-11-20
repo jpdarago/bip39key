@@ -66,8 +66,8 @@ pub struct Args {
     #[clap(short, long)]
     pub just_signkey: bool,
 
-    /// Output format: PGP, SSH or age. age output is the PGP encryption subkey as an
-    /// X25519 identity, and is never passphrase protected.
+    /// Output format: PGP, SSH or age. age output requires --algorithm hkdf, uses its own
+    /// X25519 key separate from the PGP subkeys, and is never passphrase protected.
     #[clap(short, long, default_value = "pgp")]
     pub format: OutputFormat,
 

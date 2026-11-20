@@ -198,8 +198,14 @@ fn validate(args: &Args) -> Result<()> {
         bail!("Armor option (--armor/-a) only works with PGP output format.");
     }
     if args.format == OutputFormat::Age {
-        // age keys are the X25519 encryption key alone: there is no signing
-        // key to restrict to, and no subkeys or capabilities to add.
+        // The age key has its own HKDF info string, so it is independent of
+        // the PGP encryption subkey. xor and concat only produce the 64 bytes
+        // the sign and encrypt keys already use, so they cannot derive it.
+        if args.algorithm != KeyAlgorithm::Hkdf || args.use_concatenation {
+            bail!("age output requires --algorithm hkdf (-g hkdf).");
+        }
+        // age keys are a single X25519 key: there is no signing key to
+        // restrict to, and no subkeys or capabilities to add.
         if args.just_signkey {
             bail!("Subkey option (--just-signkey/-j) only works with PGP output format.");
         }
@@ -290,6 +296,7 @@ fn main() -> Result<()> {
         expiration_timestamp_secs,
         generate_encrypt_key: !args.just_signkey,
         generate_auth_key: args.auth_subkey,
+        generate_age_key: args.format == OutputFormat::Age,
         use_rfc9106_settings: args.use_rfc9106_settings,
         use_authorization_for_sign_key: args.authorization_for_sign_key,
     };

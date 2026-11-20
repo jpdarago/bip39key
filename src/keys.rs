@@ -103,6 +103,9 @@ pub struct Keys {
     pub sign_key: SignKey,
     pub encrypt_key: Option<EncryptKey>,
     pub auth_key: Option<AuthKey>,
+    /// X25519 key for age output. Only derived with HKDF, under its own info
+    /// string, so it is independent of the PGP encryption subkey.
+    pub age_key: Option<EncryptKey>,
     pub passphrase: Option<String>,
 }
 
@@ -143,6 +146,7 @@ pub struct KeySettings {
     pub expiration_timestamp_secs: Option<i64>,
     pub generate_encrypt_key: bool,
     pub generate_auth_key: bool,
+    pub generate_age_key: bool,
     pub use_rfc9106_settings: bool,
     pub use_authorization_for_sign_key: bool,
 }
@@ -169,6 +173,7 @@ impl Keys {
                 None
             },
             auth_key: None,
+            age_key: None,
             passphrase: settings.passphrase,
         })
     }
@@ -178,6 +183,7 @@ impl Keys {
     /// independent sign and encrypt key material.
     pub fn new_with_hkdf(settings: KeySettings) -> Result<Keys> {
         let generate_auth_key = settings.generate_auth_key;
+        let generate_age_key = settings.generate_age_key;
         let creation_timestamp_secs = settings.creation_timestamp_secs;
         let expiration_timestamp_secs = settings.expiration_timestamp_secs;
         let prk = if let Some(pass) = &settings.passphrase {
@@ -200,6 +206,14 @@ impl Keys {
             let auth_key_bytes = hkdf_expand(&prk, b"bip39key-auth-v1", 32)?;
             keys.auth_key = Some(AuthKey::new(
                 &auth_key_bytes,
+                creation_timestamp_secs,
+                expiration_timestamp_secs,
+            )?);
+        }
+        if generate_age_key {
+            let age_key_bytes = hkdf_expand(&prk, b"bip39key-age-v1", 32)?;
+            keys.age_key = Some(EncryptKey::new(
+                &age_key_bytes,
                 creation_timestamp_secs,
                 expiration_timestamp_secs,
             )?);
