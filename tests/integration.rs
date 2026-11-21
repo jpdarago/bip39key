@@ -1360,3 +1360,93 @@ fn test_age_requires_hkdf() {
         );
     }
 }
+
+/// Decrypt the age file at `ciphertext` with the identity bytes, without
+/// failing on a non-zero exit so callers can assert either outcome.
+fn age_decrypt_file(identity: &[u8], ciphertext: &Path) -> Output {
+    let dir = TempDir::new().unwrap();
+    let identity_path = dir.path().join("identity.txt");
+    fs::write(&identity_path, identity).unwrap();
+    cmd(
+        "age",
+        &[
+            "-d",
+            "-i",
+            identity_path.to_str().unwrap(),
+            ciphertext.to_str().unwrap(),
+        ],
+    )
+    .stdout_capture()
+    .stderr_capture()
+    .unchecked()
+    .run()
+    .unwrap()
+}
+
+#[test]
+fn test_golden_age_message_with_passphrase() {
+    // message-age-with-passphrase.age was encrypted with the real age binary
+    // to the recipient derived from BIP39, userid(), PASS and -g hkdf on the
+    // default Argon2id settings. A freshly derived identity must still open
+    // it: this is what a user regenerating their key from the seed relies on.
+    let identity =
+        run_bip39key(BIP39, &userid(), &["-f", "age", "-g", "hkdf", "-p", PASS]).unwrap();
+    let output = age_decrypt_file(
+        &identity.stdout,
+        &golden_path("message-age-with-passphrase.age"),
+    );
+    assert!(
+        output.status.success(),
+        "age could not decrypt the golden message: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, b"Secret message\n");
+}
+
+#[test]
+fn test_golden_age_message_wrong_key_fails() {
+    // The identity derived without the passphrase is a different key, so it
+    // must not open a message encrypted to the passphrase-derived one. Uses
+    // the committed golden identity, so no Argon2id run is needed.
+    let output = age_decrypt_file(
+        &read_golden("golden_age_hkdf_secret"),
+        &golden_path("message-age-with-passphrase.age"),
+    );
+    assert!(
+        !output.status.success(),
+        "the wrong age identity decrypted the message"
+    );
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
+fn test_age_round_trip_via_output_file_with_passphrase() {
+    // Writes the identity with -o, as users do, rather than via stdout, and
+    // derives with a passphrase. -r keeps the Argon2id cost down.
+    let dir = TempDir::new().unwrap();
+    let identity_path = dir.path().join("identity.txt");
+    let flags = ["-f", "age", "-g", "hkdf", "-r", "-p", PASS];
+    let mut with_output = flags.to_vec();
+    with_output.extend(["-o", identity_path.to_str().unwrap()]);
+    let written = run_bip39key(BIP39, &userid(), &with_output).unwrap();
+    assert!(written.stdout.is_empty(), "-o still wrote to stdout");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(&identity_path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600, "identity file is not private");
+    }
+
+    let mut public = flags.to_vec();
+    public.push("-k");
+    let recipient = run_bip39key(BIP39, &userid(), &public).unwrap();
+    let recipient = String::from_utf8(recipient.stdout).unwrap();
+
+    let identity = fs::read(&identity_path).unwrap();
+    let plaintext = b"bip39key age round trip via -o";
+    assert_eq!(
+        age_round_trip(recipient.trim(), &identity, plaintext),
+        plaintext
+    );
+}
