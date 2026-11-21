@@ -287,3 +287,171 @@ mod tests {
         assert_eq!(entropy.len() * 8, 256);
     }
 }
+
+/// Known-answer tests against each seed format's upstream vectors.
+#[cfg(test)]
+mod vector_tests {
+    use super::*;
+
+    /// Every English vector from Trezor's reference implementation
+    /// (python-mnemonic, vectors.json), as (entropy, mnemonic). bip39key keys
+    /// off the BIP39 entropy, not the PBKDF2 seed, so the entropy column is the
+    /// one to check.
+    const TREZOR_ENGLISH: &[(&str, &str)] = &[
+        (
+            "00000000000000000000000000000000",
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        ),
+        (
+            "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "legal winner thank year wave sausage worth useful legal winner thank yellow",
+        ),
+        (
+            "80808080808080808080808080808080",
+            "letter advice cage absurd amount doctor acoustic avoid letter advice cage above",
+        ),
+        (
+            "ffffffffffffffffffffffffffffffff",
+            "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+        ),
+        (
+            "000000000000000000000000000000000000000000000000",
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon agent",
+        ),
+        (
+            "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal will",
+        ),
+        (
+            "808080808080808080808080808080808080808080808080",
+            "letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter always",
+        ),
+        (
+            "ffffffffffffffffffffffffffffffffffffffffffffffff",
+            "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo when",
+        ),
+        (
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
+        ),
+        (
+            "7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f",
+            "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title",
+        ),
+        (
+            "8080808080808080808080808080808080808080808080808080808080808080",
+            "letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic bless",
+        ),
+        (
+            "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote",
+        ),
+        (
+            "9e885d952ad362caeb4efe34a8e91bd2",
+            "ozone drill grab fiber curtain grace pudding thank cruise elder eight picnic",
+        ),
+        (
+            "6610b25967cdcca9d59875f5cb50b0ea75433311869e930b",
+            "gravity machine north sort system female filter attitude volume fold club stay feature office ecology stable narrow fog",
+        ),
+        (
+            "68a79eaca2324873eacc50cb9c6eca8cc68ea5d936f98787c60c7ebc74e6ce7c",
+            "hamster diagram private dutch cause delay private meat slide toddler razor book happy fancy gospel tennis maple dilemma loan word shrug inflict delay length",
+        ),
+        (
+            "c0ba5a8e914111210f2bd131f3d5e08d",
+            "scheme spot photo card baby mountain device kick cradle pact join borrow",
+        ),
+        (
+            "6d9be1ee6ebd27a258115aad99b7317b9c8d28b6d76431c3",
+            "horn tenant knee talent sponsor spell gate clip pulse soap slush warm silver nephew swap uncle crack brave",
+        ),
+        (
+            "9f6a2878b2520799a44ef18bc7df394e7061a224d2c33cd015b157d746869863",
+            "panda eyebrow bullet gorilla call smoke muffin taste mesh discover soft ostrich alcohol speed nation flash devote level hobby quick inner drive ghost inside",
+        ),
+        (
+            "23db8160a31d3e0dca3688ed941adbf3",
+            "cat swing flag economy stadium alone churn speed unique patch report train",
+        ),
+        (
+            "8197a4a47f0425faeaa69deebc05ca29c0a5b5cc76ceacc0",
+            "light rule cinnamon wrap drastic word pride squirrel upgrade then income fatal apart sustain crack supply proud access",
+        ),
+        (
+            "066dca1a2bb7e8a1db2832148ce9933eea0f3ac9548d793112d9a95c9407efad",
+            "all hour make first leader extend hole alien behind guard gospel lava path output census museum junior mass reopen famous sing advance salt reform",
+        ),
+        (
+            "f30f8c1da665478f49b001d94c5fc452",
+            "vessel ladder alter error federal sibling chat ability sun glass valve picture",
+        ),
+        (
+            "c10ec20dc3cd9f652c7fac2f1230f7a3c828389a14392f05",
+            "scissors invite lock maple supreme raw rapid void congress muscle digital elegant little brisk hair mango congress clump",
+        ),
+        (
+            "f585c11aec520db57dd353c69554b21a89b20fb0650966fa0a9d6f74fd989d8f",
+            "void come effort suffer camp survey warrior heavy shoot primary clutch crush open amazing screen patrol group space point ten exist slush involve unfold",
+        ),
+    ];
+
+    #[test]
+    fn bip39_trezor_vectors() {
+        assert_eq!(TREZOR_ENGLISH.len(), 24);
+        for (entropy, mnemonic) in TREZOR_ENGLISH {
+            assert_eq!(
+                hex::encode(decode_phrase(&SeedFormat::Bip39, mnemonic).unwrap()),
+                *entropy,
+                "{mnemonic}"
+            );
+        }
+    }
+
+    // Electrum's own test vector (tests/test_mnemonic.py, SEED_TEST_CASES
+    // "english"), the only English one without a passphrase.
+    //
+    // bip39key's Electrum seed is NOT Electrum's BIP32 seed. Electrum runs
+    // PBKDF2-HMAC-SHA512(phrase, salt = b"electrum", 2048). electrum_seed()
+    // passes "electrum" through SaltString::from_b64, so PBKDF2 gets the six
+    // base64-*decoded* bytes 7a579cb6bba6 as its salt instead. The output is
+    // still a deterministic function of the phrase, and it only feeds Argon2id,
+    // but it can never be changed: every Electrum-derived key depends on it.
+    //
+    // This pins that behavior against an independent PBKDF2 call, and checks
+    // the literal-salt computation does reproduce Electrum's published seed,
+    // so the divergence is the salt and nothing else.
+    #[test]
+    fn electrum_upstream_vector() {
+        let phrase =
+            "wild father tree among universe such mobile favorite target dynamic credit identify";
+        let electrum_bip32_seed = "aac2a6302e48577ab4b46f23dbae0774e2e62c796f797d0a1b5faeb528301e30\
+                                   64342dafb79069e7c4c6b8c38ae11d7a973bec0d4f70626f8cc5184a8d0b0756";
+
+        // Electrum's seed version check accepts its own vector (a segwit seed).
+        assert!(is_valid_electrum_phrase(phrase));
+
+        let mut literal_salt = [0u8; 64];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha512>(
+            phrase.as_bytes(),
+            b"electrum",
+            2048,
+            &mut literal_salt,
+        );
+        assert_eq!(hex::encode(literal_salt), electrum_bip32_seed);
+
+        let mut decoded_salt = [0u8; 32];
+        pbkdf2::pbkdf2_hmac::<sha2::Sha512>(
+            phrase.as_bytes(),
+            &[0x7a, 0x57, 0x9c, 0xb6, 0xbb, 0xa6],
+            2048,
+            &mut decoded_salt,
+        );
+        let seed = decode_phrase(&SeedFormat::Electrum, phrase).unwrap();
+        assert_eq!(seed, decoded_salt);
+        assert_eq!(
+            hex::encode(&seed),
+            "7f8e333959cf6bdbc395cb1d99d1978e887103a3513e965b04dbf437afea25da"
+        );
+    }
+}
