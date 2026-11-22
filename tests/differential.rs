@@ -314,13 +314,8 @@ fn check_ssh(input: &KeyInput, passphrase: Option<&str>) {
         .expect("signature does not verify against the public key line");
 }
 
-// IGNORED until the SSH wrapping fix lands: bip39key wraps the private key's
-// base64 with textwrap::fill, which breaks lines at '/' and leaves them
-// uneven. ssh-keygen accepts that, but ssh-key follows RFC 7468 strictly and
-// rejects it with Pem(Base64(InvalidEncoding)). Run with --ignored to see it.
 proptest! {
     #[test]
-    #[ignore = "bip39key wraps SSH base64 unevenly; see the comment above"]
     fn ssh_unprotected_keys_work_in_ssh_key(input in ssh_input()) {
         check_ssh(&input, None);
     }
@@ -332,7 +327,6 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(1))]
 
     #[test]
-    #[ignore = "bip39key wraps SSH base64 unevenly; see the comment above"]
     fn ssh_passphrase_keys_work_in_ssh_key(input in ssh_input(), passphrase in "[ -~]{1,32}") {
         check_ssh(&input, Some(&passphrase));
     }

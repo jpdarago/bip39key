@@ -546,7 +546,7 @@ pub fn output_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<W>) ->
     output_as_packets(keys, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
-    out.write_all(textwrap::fill(&BASE64.encode(&packets), 64).as_bytes())?;
+    out.write_all(crate::wrap::fixed_width(&BASE64.encode(&packets), 64).as_bytes())?;
     let mut checksum_cursor = ByteCursor::new(vec![]);
     let checksum = armor_checksum(packets);
     checksum_cursor.write_all(&[
@@ -568,7 +568,7 @@ pub fn output_public_armored<W: Write>(keys: &Keys, out: &mut std::io::BufWriter
     output_public_as_packets(keys, &mut buffer)?;
     buffer.flush()?;
     let packets = buffer.get_mut().get_mut();
-    out.write_all(textwrap::fill(&BASE64.encode(&packets), 64).as_bytes())?;
+    out.write_all(crate::wrap::fixed_width(&BASE64.encode(&packets), 64).as_bytes())?;
     let mut checksum_cursor = ByteCursor::new(vec![]);
     let checksum = armor_checksum(packets);
     checksum_cursor.write_all(&[

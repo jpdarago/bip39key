@@ -132,7 +132,7 @@ pub fn output_secret_as_pem<W: Write>(keys: &Keys, out: &mut std::io::BufWriter<
         put_ssh_key_without_passphrase(keys, &mut cursor)?;
     }
     // Output as base64 encoded.
-    out.write_all(textwrap::fill(&BASE64.encode(cursor.get_mut()), 70).as_bytes())?;
+    out.write_all(crate::wrap::fixed_width(&BASE64.encode(cursor.get_mut()), 70).as_bytes())?;
     out.write_all(b"\n-----END OPENSSH PRIVATE KEY-----\n")?;
     Ok(())
 }
