@@ -295,6 +295,16 @@ to keep it, or press Enter for none):
 ssh-keygen -p -f path/to/key
 ```
 
+### `-n` wrote unencrypted key files (fixed after 1.9.0)
+
+Up to 1.9.0, `-n/--skip-passphrase-for-key-material` dropped the passphrase
+entirely: it stayed out of key derivation, as intended, but the OpenPGP or
+OpenSSH secret key file was also written **unencrypted**, contrary to the
+option's description. The derived key was always correct. If you created a key
+file with `-n` and a passphrase, treat that file as unprotected: regenerate it
+with a fixed version, or encrypt it with `gpg --edit-key ... passwd` or
+`ssh-keygen -p -f path/to/key`.
+
 ### The `xor` algorithm leaks more than it should
 
 The default `--algorithm xor` lets someone who has both your passphrase and

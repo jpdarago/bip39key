@@ -1494,3 +1494,26 @@ fn test_golden_base64_lines_are_fixed_width() {
     }
     assert!(checked >= 20, "only found {checked} base64 golden files");
 }
+
+#[test]
+fn test_skip_passphrase_still_encrypts_the_key_file() {
+    // -n keeps the passphrase out of derivation but, as its help says, the
+    // passphrase still encrypts the output. It used to be dropped entirely,
+    // leaving a plaintext secret key the user believed was protected.
+    let with_n = run_bip39key(
+        BIP39,
+        &userid(),
+        &["-f", "ssh", "-g", "hkdf", "-n", "-p", PASS],
+    )
+    .unwrap();
+    assert!(
+        run_ssh_keygen(&with_n.stdout, "").is_err(),
+        "the -n key file is not encrypted"
+    );
+    let unlocked = run_ssh_keygen(&with_n.stdout, PASS).unwrap();
+
+    // ...and the key inside is the no-passphrase key.
+    let plain = run_bip39key(BIP39, &userid(), &["-f", "ssh", "-g", "hkdf"]).unwrap();
+    let plain_public = run_ssh_keygen(&plain.stdout, "").unwrap();
+    assert_eq!(unlocked.stdout, plain_public.stdout);
+}
