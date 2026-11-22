@@ -19,6 +19,10 @@
 > 1.12.0 can fail to decrypt with keys bip39key generates, reporting
 > `Bad secret key`. Your key is fine. See [Known issues](#known-issues).
 
+> :information_source: If you reimplement bip39key's derivation or check its output
+> with other tools, read [Known bugs](#known-bugs) first: `-r` and Electrum seeds
+> do not do exactly what their names suggest.
+
 Generates a cryptographical key from a [BIP39](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki) mnemonic (and, optionally, a
 passphrase).
 
@@ -56,7 +60,7 @@ Options:
   -d, --creation-timestamp <CREATION_TIMESTAMP>
           Creation timestamp (as unix timestamp in seconds). If unset, uses the genesis block (1231006505)
   -y, --expiration-timestamp <EXPIRATION_TIMESTAMP>
-          Creation timestamp (as unix timestamp in seconds). If unset, the keys do not expire
+          Expiration timestamp (as unix timestamp in seconds). If unset, the keys do not expire
   -j, --just-signkey
           Only output the sign key for PGP
   -f, --format <FORMAT>
@@ -229,7 +233,77 @@ cp completions/bip39key.zsh $(brew --prefix)/share/zsh/site-functions/_bip39key
 cp man/bip39key.1 /usr/local/share/man/man1/
 ```
 
+## Known bugs
+
+None of these changes the key a given seed produces, and most can never be
+fixed for that reason: fixing them would give every existing user a different
+key. Apart from the `xor` weakness at the end, they do not affect the security
+of your keys. They matter mainly if you reimplement bip39key's derivation, or
+check its output with other tools.
+
+### `--use-rfc9106-settings` uses 1 lane, not 4
+
+`-r/--use-rfc9106-settings` takes its Argon2id parameters from the
+[rust-argon2](https://crates.io/crates/rust-argon2) crate's
+`Config::rfc9106()`. That is 2 GiB of memory and 1 pass, as in RFC 9106's first
+recommended option, but **1 lane**, where the RFC recommends 4. The number of
+lanes changes Argon2id's output, so a tool set to the RFC's recommendation
+derives a different key from the same inputs.
+
+Keys made with `-r` have always used 1 lane, so it stays that way. To reproduce
+bip39key's derivation elsewhere, use these Argon2id (v1.3) parameters, with the
+user ID as the salt and a 64-byte output:
+
+| Settings | Memory | Passes | Lanes |
+|---|---|---|---|
+| Default | 64 MiB (65536 KiB) | 32 | 8 |
+| `-r/--use-rfc9106-settings` | 2 GiB (2097152 KiB) | 1 | 1 |
+
+### Electrum seeds are not Electrum's seed
+
+With `--seed-format electrum`, bip39key turns the phrase into 32 bytes of
+entropy with PBKDF2-HMAC-SHA512 and 2048 iterations, like Electrum. Electrum
+uses the text `electrum` as the salt. bip39key was meant to do the same but
+instead uses the six bytes you get by base64-*decoding* `electrum`
+(`7a 57 9c b6 bb a6`). So the entropy bip39key starts from is not the
+first 32 bytes of Electrum's own seed for that phrase.
+
+Your keys are unaffected: they are still a deterministic function of the
+phrase, and the result only feeds Argon2id. It matters if you reimplement the
+derivation, which needs that 6-byte salt. Related limitations:
+
+* bip39key does not use Electrum's seed extension (its passphrase). Use
+  bip39key's own `--passphrase` instead.
+* Only Electrum's `standard` and `segwit` seed types are accepted; `2fa` and
+  pre-2.0 seeds are rejected.
+
+### Uneven base64 lines in armored and OpenSSH output (fixed in 1.9.0)
+
+Up to 1.8.2, bip39key broke the base64 in armored OpenPGP keys (`-a`) and
+OpenSSH private keys (`-f ssh`) at uneven points instead of every 64 or 70
+characters. GnuPG and `ssh-keygen` accept that, but strict parsers do not: for
+example, Rust's [`ssh-key`](https://crates.io/crates/ssh-key) crate rejects
+those OpenSSH keys with `InvalidEncoding`.
+
+The key inside is identical, so 1.9.0 and later regenerate exactly the same
+key, just laid out differently; only a byte-for-byte comparison of the files
+will differ. To fix an OpenSSH key file made by an older version without
+regenerating it, have `ssh-keygen` rewrite it (enter the same passphrase twice
+to keep it, or press Enter for none):
+
+```bash
+ssh-keygen -p -f path/to/key
+```
+
+### The `xor` algorithm leaks more than it should
+
+The default `--algorithm xor` lets someone who has both your passphrase and
+your key recover the Argon2id hash of your seed. See the warning under
+[Entropy source](#entropy-source). Use `--algorithm hkdf` for new keys.
+
 ## Known issues
+
+These are bugs in other software that affect bip39key users.
 
 ### `Bad secret key` with libgcrypt 1.12.0 (Ubuntu 26.04)
 
