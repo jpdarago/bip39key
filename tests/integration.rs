@@ -1450,3 +1450,47 @@ fn test_age_round_trip_via_output_file_with_passphrase() {
         plaintext
     );
 }
+
+#[test]
+fn test_golden_base64_lines_are_fixed_width() {
+    // Armor wraps at 64 columns and OpenSSH private keys at 70, every line
+    // full except the last, as GnuPG and OpenSSH write them. Strict RFC 7468
+    // parsers reject anything else; bip39key once broke lines at '/'.
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("test")
+        .join("golden");
+    let mut checked = 0;
+    for entry in fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let Ok(text) = fs::read_to_string(&path) else {
+            continue; // binary PGP packets
+        };
+        let (width, body): (usize, Vec<&str>) = if text.starts_with("-----BEGIN PGP") {
+            // Skip the armor headers up to the blank line; stop at the
+            // checksum line.
+            let body = text
+                .lines()
+                .skip_while(|line| !line.is_empty())
+                .skip(1)
+                .take_while(|line| !line.starts_with('='))
+                .collect();
+            (64, body)
+        } else if text.starts_with("-----BEGIN OPENSSH PRIVATE KEY-----") {
+            let body = text
+                .lines()
+                .filter(|line| !line.starts_with("-----"))
+                .collect();
+            (70, body)
+        } else {
+            continue;
+        };
+        let (last, full) = body.split_last().unwrap();
+        assert!(
+            full.iter().all(|line| line.len() == width) && last.len() <= width,
+            "{} is not wrapped at exactly {width} columns",
+            path.display()
+        );
+        checked += 1;
+    }
+    assert!(checked >= 20, "only found {checked} base64 golden files");
+}
