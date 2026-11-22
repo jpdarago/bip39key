@@ -84,6 +84,7 @@ devenv configures git hooks for `rustfmt` and `clippy`.
 - **`age.rs`** — age identity (`AGE-SECRET-KEY-1...`) and recipient (`age1...`) output. Uses its own X25519 key from HKDF info `bip39key-age-v1` (hkdf only), Bech32 (BIP 173) via the `bech32` crate. Always plaintext: age identities have no passphrase protection.
 - **`seed.rs`** — BIP39 and Electrum seed phrase parsing/validation. Includes interactive prompt with autocomplete and Levenshtein-based typo suggestions. Wordlist bundled from `resources/bip39.txt`, overridable via `WORDLIST_BIP39` env var.
 - **`passphrase.rs`** — Passphrase input via pinentry subprocess (configurable with `BIP39_PINENTRY` env var) or interactive terminal prompt.
+- **`wrap.rs`** — Fixed-width base64 line wrapping (64 for armor, 70 for OpenSSH), every line full except the last, as GnuPG and OpenSSH write them.
 - **`console.rs`** — Terminal detection and `console_logln!` macro that suppresses output when not on a TTY. `NO_INTERACTIVE_OUTPUT=1` forces non-interactive mode.
 - **`types.rs`** — Type aliases (`Result<T>`, `ByteCursor`).
 

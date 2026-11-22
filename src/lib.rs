@@ -18,3 +18,4 @@ pub mod pgp;
 pub mod seed;
 pub mod ssh;
 pub mod types;
+pub mod wrap;
