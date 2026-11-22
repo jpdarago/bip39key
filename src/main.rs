@@ -290,7 +290,7 @@ fn main() -> Result<()> {
         passphrase: if args.skip_passphrase_for_key_material {
             None
         } else {
-            pass
+            pass.clone()
         },
         creation_timestamp_secs,
         expiration_timestamp_secs,
@@ -319,12 +319,18 @@ fn main() -> Result<()> {
         KeyAlgorithm::Hkdf => {}
     }
     console_logln!("Generating key entropy");
-    let keys = match algorithm {
+    let mut keys = match algorithm {
         KeyAlgorithm::Hkdf => Keys::new_with_hkdf(settings),
         KeyAlgorithm::Concat => Keys::new_with_concat(settings),
         KeyAlgorithm::Xor => Keys::new_with_xor(settings),
     }
     .context("Could not build keys")?;
+    if args.skip_passphrase_for_key_material {
+        // -n keeps the passphrase out of derivation, but it still protects
+        // the key file. Keys.passphrase is what pgp.rs and ssh.rs encrypt
+        // with, and derivation above left it empty.
+        keys.passphrase = pass;
+    }
     console_logln!("Done generating key entropy");
     console_logln!("{}", format_fingerprint(&args, &keys)?);
     if args.format == OutputFormat::Age && !args.public_key {
