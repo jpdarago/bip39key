@@ -1,11 +1,30 @@
 # cargo-audit configuration. CI runs `cargo audit --deny warnings`, so unsound,
 # unmaintained and yanked advisories fail the build alongside vulnerabilities.
 #
-# `ignore` is deliberately empty. An advisory with a released fix inside our
-# semver requirements should be fixed by bumping Cargo.lock, not silenced here:
-# suppressing it keeps CI green while release binaries keep shipping the
-# affected crate. Only an advisory with no available fix belongs in this list,
-# and then only with a written reason for why it cannot affect bip39key.
+# An advisory with a released fix inside our semver requirements should be
+# fixed by bumping Cargo.lock, not silenced here: suppressing it keeps CI green
+# while release binaries keep shipping the affected crate. Only an advisory with
+# no available fix belongs in this list, and then only with a written reason for
+# why it cannot affect bip39key.
+#
+# cargo-audit cannot tell dev-dependencies from shipped ones; it reads the whole
+# Cargo.lock. Every entry below is reachable only through a test oracle (`pgp`
+# or `age` in [dev-dependencies]). Before adding to this list, confirm with
+#   cargo tree -e normal -i <crate>
+# that it prints nothing, i.e. the crate is not in the shipped binary.
 
 [advisories]
-ignore = []
+ignore = [
+    # rsa 0.9 Marvin timing side channel. Reached only via `pgp` (rPGP), a
+    # dev-dependency used as a differential-test oracle on Ed25519/X25519 keys;
+    # no RSA operation runs and the crate is not in the shipped binary. Fixed
+    # in rsa 0.10, which `pgp` 0.21 (latest) does not allow.
+    "RUSTSEC-2023-0071",
+    # crypto-bigint 0.5 timing variability. Reached only via `pgp` and `age`
+    # (elliptic-curve 0.13 / rsa 0.9) in dev-dependencies, on random test keys;
+    # not in the shipped binary. Fixed in 0.7.6, outside what those crates allow.
+    "RUSTSEC-2026-0387",
+    # basic-toml is unmaintained (no fix exists). Reached only via `age`'s
+    # i18n support in dev-dependencies; not in the shipped binary.
+    "RUSTSEC-2026-0374",
+]
