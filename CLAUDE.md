@@ -25,6 +25,10 @@ Tests come in two layers. `tests/integration.rs` exercises the binary end-to-end
 
 Unit and property tests live in `#[cfg(test)]` modules inside the library (`src/pgp.rs`, `src/ssh.rs`, `src/age.rs`, `src/seed.rs`, `src/passphrase.rs`) and run in microseconds, since they test the pure encoders rather than key derivation. `proptest` covers packet length headers, MPI encoding, the armor CRC-24, and the OpenSSH length-prefix framing and padding. Prefer adding coverage here when the behavior under test does not need a derived key.
 
+Known-answer tests in `src/keys.rs` and `src/seed.rs` check each derivation stage against its published vectors (Trezor BIP39, Electrum, RFC 5869, 9106, 7748, 8032), so a dependency upgrade that moves the golden vectors points at the stage that changed. They also pin two quirks that can never change: `-r` uses `argon2::Config::rfc9106()`, which has 1 lane (not the RFC's p=4), and the Electrum seed's PBKDF2 salt is the base64-*decoded* `"electrum"`, so it is not Electrum's own seed.
+
+`tests/differential.rs` puts random key bytes straight into `Keys` (no Argon2id) and checks the output against independent implementations: rPGP (`pgp`), RustCrypto `ssh-key`, and the `age` crate. Beyond parsing, the oracle must verify every self-signature, sign and verify with the key, and decrypt a message encrypted to it. User IDs straddle the 191/192 and 8383/8384 packet length boundaries. Those crates are dev-dependencies only.
+
 ### Golden vectors
 
 `test/golden/*.golden` pins the exact bytes bip39key produces for each
