@@ -331,7 +331,7 @@ to keep it, or press Enter for none):
 ssh-keygen -p -f path/to/key
 ```
 
-### `-n` wrote unencrypted key files (fixed after 1.9.0)
+### `-n` wrote unencrypted key files (fixed in 1.9.1)
 
 Up to 1.9.0, `-n/--skip-passphrase-for-key-material` dropped the passphrase
 entirely: it stayed out of key derivation, as intended, but the OpenPGP or
