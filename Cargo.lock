@@ -252,7 +252,7 @@ checksum = "efbd3e1070bbdf4cd88a75264e18e8a26f7cb5c6949eadf0ceb85fb159cf08f8"
 
 [[package]]
 name = "bip39key"
-version = "1.9.0"
+version = "1.9.1"
 dependencies = [
  "aes",
  "age",
