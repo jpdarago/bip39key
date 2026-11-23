@@ -70,6 +70,14 @@ Pass `--locked` to every cargo command in CI and in releases. The
 `CARGO_NET_LOCKED` environment variable does **not** do this — it is silently
 ignored and the lockfile gets updated anyway.
 
+## Generated files
+
+`build.rs` regenerates three things from `src/cli.rs` on every build: the usage
+block in `README.md` (between the `BEGIN USAGE` and `END USAGE` markers), the
+manpage in `man/`, and the shell completions in `completions/`. Do not edit them
+by hand. After changing a flag or its help text, build and commit the result; CI
+fails if the committed copies differ from what the build writes.
+
 ## Pre-commit Hooks
 
 devenv configures git hooks for `rustfmt` and `clippy`.
