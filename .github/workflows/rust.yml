@@ -31,6 +31,12 @@ jobs:
       - name: Run cargo check
         run: cargo check --locked
 
+      # build.rs regenerates the README usage block, the manpage and the shell
+      # completions from src/cli.rs. If the build just changed any of them, the
+      # committed copy is stale: build locally and commit the result.
+      - name: Check generated files are up to date
+        run: git diff --exit-code -- README.md man completions
+
   version-check:
     name: Version Check
     runs-on: ubuntu-latest
