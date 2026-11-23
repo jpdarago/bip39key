@@ -35,7 +35,7 @@ x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 [build-dependencies]
 clap = { version = "4.4.11", features = ["derive"] }
 clap_complete = "4"
-clap_mangen = "0.2"
+clap_mangen = "0.3"
 
 [dev-dependencies]
 age = "0.12"
