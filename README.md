@@ -291,15 +291,19 @@ linked, so the package has no dependencies and installs on any release of
 Debian, Ubuntu or Tails. It also installs the manpage and the bash and zsh
 completions.
 
-Download the package and its signature, check the signature, then install:
+Download the package and its signature, import the release signing key from
+GitHub, check the signature, then install:
 
 ```bash
+curl -sSfL https://github.com/jpdarago.gpg | gpg --import
 gpg --verify bip39key_1.10.1_amd64.deb.sig bip39key_1.10.1_amd64.deb
 sudo dpkg -i bip39key_1.10.1_amd64.deb
 ```
 
 `gpg --verify` must report a good signature from the release signing key,
-fingerprint `3A4C 7A51 7200 AF1D E596  ABA1 CA13 E9FD 048C 6D7F`. The same key
+fingerprint `3A4C 7A51 7200 AF1D E596  ABA1 CA13 E9FD 048C 6D7F`
+(`jpdarago+releases@gmail.com`). Compare the fingerprint yourself: gpg only
+says the signature is good, not that the key is the right one. The same key
 signs `SHA256SUMS`, which lists every file in the release.
 
 Remove it with `sudo apt remove bip39key`. The package is not in an apt
