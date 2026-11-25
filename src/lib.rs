@@ -12,10 +12,12 @@ pub mod console;
 
 pub mod age;
 pub mod cli;
+pub mod html_receipt;
 pub mod keys;
 pub mod passphrase;
 pub mod pgp;
 pub mod plan;
+pub mod receipt;
 pub mod seed;
 pub mod ssh;
 pub mod types;
