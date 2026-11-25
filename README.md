@@ -283,6 +283,44 @@ then pass the `--skip-passphrase-for-key-material/-n` option.
 > 128 bits of entropy and Argon2id's computational cost, both `concat` and
 > `hkdf` avoid this issue entirely.
 
+## Installing on Debian, Ubuntu and Tails
+
+Each [release](https://github.com/jpdarago/bip39key/releases) from 1.10.1 on
+includes a `.deb` for `amd64` and `arm64`. The binary inside is statically
+linked, so the package has no dependencies and installs on any release of
+Debian, Ubuntu or Tails. It also installs the manpage and the bash and zsh
+completions.
+
+Download the package and its signature, check the signature, then install:
+
+```bash
+gpg --verify bip39key_1.10.1_amd64.deb.sig bip39key_1.10.1_amd64.deb
+sudo dpkg -i bip39key_1.10.1_amd64.deb
+```
+
+`gpg --verify` must report a good signature from the release signing key,
+fingerprint `3A4C 7A51 7200 AF1D E596  ABA1 CA13 E9FD 048C 6D7F`. The same key
+signs `SHA256SUMS`, which lists every file in the release.
+
+Remove it with `sudo apt remove bip39key`. The package is not in an apt
+repository, so `apt upgrade` does not update it: install the newer `.deb` over
+the old one.
+
+### Tails
+
+Tails starts from a clean system every time, so a package installed with
+`dpkg -i` is gone after a restart, and the Additional Software feature only
+remembers packages installed from apt repositories. Two ways to keep bip39key:
+
+- Keep the verified `.deb` in the Persistent Storage and run `sudo dpkg -i` on
+  it at the start of a session. This needs an administration password, set on
+  the Welcome Screen.
+- Or skip the package: download `bip39key-x86_64-unknown-linux-musl.tar.gz`
+  and its `.sig`, verify it the same way, unpack it into the Persistent
+  Storage, and run the binary from there. No administration password needed.
+
+bip39key never uses the network, so it works with networking disabled.
+
 ## Installing shell completions and manpage
 
 Building the project generates shell completions and a manpage automatically
@@ -316,6 +354,10 @@ sudo cp man/bip39key.1 /run/current-system/sw/share/man/man1/
 ```
 
 ### Debian/Ubuntu
+
+The `.deb` package installs these for you (see
+[Installing on Debian, Ubuntu and Tails](#installing-on-debian-ubuntu-and-tails)).
+For a build from source:
 
 ```bash
 # Bash
