@@ -14,6 +14,7 @@
 use crate::cli::{Args, KeyAlgorithm, OutputFormat, SeedFormat};
 use crate::keys::{KeySettings, DEFAULT_CREATION_TIMESTAMP};
 use crate::pgp;
+use crate::receipt::{self, PassRole, Receipt};
 
 use std::fmt;
 
@@ -23,6 +24,15 @@ use std::fmt;
 pub struct Env {
     pub stdin_is_terminal: bool,
     pub stdout_is_terminal: bool,
+}
+
+/// What is known about the receipt when regenerating with `--from-receipt`.
+/// Its parameters are already in the flags (see [`apply_receipt`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Recovery {
+    /// HTML receipts carry the key fingerprint; a raw receipt string does not,
+    /// so nothing can check the regenerated key.
+    pub has_fingerprint: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,9 +89,17 @@ pub enum Warning {
     /// A passphrase was given with `-p` or `-e`, but it neither feeds
     /// derivation (`-n`) nor encrypts anything (public key output).
     PassphraseUnused,
+    /// Regenerating from a raw receipt string: nothing checks the result.
+    ReceiptHasNoFingerprint,
 }
 
 impl Warning {
+    /// Shown on stderr even without a terminal. The rest are informational
+    /// and stay quiet in scripts, like all other console output.
+    pub fn always_shown(&self) -> bool {
+        matches!(self, Warning::ReceiptHasNoFingerprint)
+    }
+
     pub fn message(&self) -> &'static str {
         match self {
             Warning::DeprecatedInteractiveFlag => {
@@ -95,6 +113,9 @@ impl Warning {
             }
             Warning::AgeSecretIsPlaintext => {
                 "WARNING: age identities cannot be passphrase protected. The secret key is written in plaintext."
+            }
+            Warning::ReceiptHasNoFingerprint => {
+                "WARNING: the receipt carries no fingerprint (raw receipt string), so the regenerated key cannot be verified. Compare the fingerprint printed below against a trusted copy."
             }
             Warning::PassphraseUnused => {
                 "WARNING: the passphrase is not used: -n keeps it out of key derivation, and a public key is not encrypted."
@@ -113,6 +134,12 @@ pub struct Plan {
     pub passphrase_in_derivation: bool,
     /// Whether a passphrase, if there is one, encrypts the written key.
     pub passphrase_encrypts_output: bool,
+    /// Ask twice at the prompt. Off only when the receipt's fingerprint will
+    /// catch a typo anyway.
+    pub confirm_passphrase: bool,
+    /// The receipt says a passphrase fed derivation, so having none is an
+    /// error and an empty answer at the prompt is the empty passphrase.
+    pub passphrase_required: bool,
 
     /// The algorithm after resolving the deprecated `-c`.
     pub algorithm: KeyAlgorithm,
@@ -132,6 +159,13 @@ pub struct Plan {
     pub text_to_file: bool,
     /// Armor PGP output when it goes to standard output.
     pub text_to_stdout: bool,
+
+    /// `--output-receipt FILE`.
+    pub receipt_output: Option<String>,
+    /// Set when regenerating with `--from-receipt`.
+    pub recovery: Option<Recovery>,
+    /// Paths this run reads. No output may land on one of them.
+    pub input_files: Vec<String>,
 
     pub warnings: Vec<Warning>,
 }
@@ -157,12 +191,46 @@ impl Plan {
         }
     }
 
+    /// What a receipt for this run records about the passphrase: `withpass`
+    /// only when one was entered and it fed derivation.
+    pub fn receipt_pass_role(&self, has_passphrase: bool) -> PassRole {
+        if has_passphrase && self.passphrase_in_derivation {
+            PassRole::WithPass
+        } else {
+            PassRole::NoPass
+        }
+    }
+
     /// The passphrase the encoders encrypt the key file with, if any.
     pub fn output_passphrase(&self, passphrase: Option<&str>) -> Option<String> {
         passphrase
             .filter(|_| self.passphrase_encrypts_output)
             .map(str::to_string)
     }
+}
+
+/// Put a receipt's parameters into the flags. The receipt is authoritative:
+/// it supplies the user ID and every derivation flag. Explicit overrides are
+/// rejected by clap (`conflicts_with_all` on `--from-receipt`), since they
+/// would silently derive a different key.
+pub fn apply_receipt(args: &mut Args, rec: &Receipt) {
+    args.user_id = Some(rec.user_id.clone());
+    args.seed_format = rec.seed_format.clone();
+    args.algorithm = rec.algorithm.clone();
+    args.use_concatenation = false;
+    args.use_rfc9106_settings = rec.rfc9106;
+    args.auth_subkey = rec.auth_subkey;
+    args.authorization_for_sign_key = rec.sign_auth;
+    args.just_signkey = rec.just_signkey;
+    args.format = if rec.ssh_format {
+        OutputFormat::Ssh
+    } else {
+        OutputFormat::Pgp
+    };
+    args.creation_timestamp = Some(rec.created);
+    args.timestamp = None;
+    args.expiration_timestamp = rec.expires;
+    args.skip_passphrase_for_key_material = rec.pass_role == PassRole::NoPass;
 }
 
 fn creation_timestamp_secs(args: &Args) -> i64 {
@@ -195,6 +263,19 @@ macro_rules! bail {
 /// never on the terminal: a command line must not be valid in a shell and
 /// invalid in a script.
 fn validate(args: &Args) -> std::result::Result<(), PlanError> {
+    let Some(user_id) = &args.user_id else {
+        bail!("--user-id is required (or use --from-receipt)");
+    };
+    if args.output_receipt.is_some() {
+        // A receipt with a colon in the user ID cannot be parsed back; fail
+        // now rather than after writing an unrecoverable receipt.
+        receipt::validate_user_id(user_id).map_err(|err| PlanError(err.to_string()))?;
+        // The receipt format has fields for PGP and SSH only, so it cannot
+        // describe an age key yet.
+        if args.format == OutputFormat::Age {
+            bail!("--output-receipt does not support age output yet.");
+        }
+    }
     if args.creation_timestamp.is_some() && args.timestamp.is_some() {
         bail!("--timestamp (-t) flag is deprecated, use --creation-timestamp");
     }
@@ -270,10 +351,13 @@ fn validate(args: &Args) -> std::result::Result<(), PlanError> {
     if args.auth_subkey && args.algorithm != KeyAlgorithm::Hkdf {
         bail!("--auth-subkey requires --algorithm hkdf.");
     }
-    // The seed file is read before the key is written, so the run would
-    // succeed and leave the seed phrase replaced by the key. Different
-    // spellings of one path are caught when the file is opened.
-    if let (Some(input), Some(output)) = (&args.input_filename, &args.output_filename) {
+    // Every output must be a different file from every input and from the
+    // other output. The seed and the receipt are read before anything is
+    // written, so a collision would succeed and destroy one of them. This
+    // compares the paths as written; main.rs compares them again once
+    // resolved, which catches ./x against x and symlinks.
+    let output = args.output_filename.as_ref().filter(|f| !f.is_empty());
+    if let (Some(input), Some(output)) = (&args.input_filename, output) {
         if input == output {
             bail!(
                 "--output-filename is the seed file ({}): the key would overwrite the seed phrase.",
@@ -281,12 +365,36 @@ fn validate(args: &Args) -> std::result::Result<(), PlanError> {
             );
         }
     }
+    if let Some(receipt_path) = &args.output_receipt {
+        if output == Some(receipt_path) {
+            bail!("--output-receipt and --output-filename are the same file: the receipt would overwrite the key.");
+        }
+        if args.input_filename.as_ref() == Some(receipt_path) {
+            bail!("--output-receipt is the seed file ({}): the receipt would overwrite the seed phrase.", receipt_path);
+        }
+        if args.from_receipt.as_ref() == Some(receipt_path) {
+            bail!("--output-receipt and --from-receipt are the same file: the new receipt would overwrite the one being read.");
+        }
+    }
+    if let Some(receipt_path) = &args.from_receipt {
+        if output == Some(receipt_path) {
+            bail!("--from-receipt and --output-filename are the same file: the key would overwrite the receipt.");
+        }
+    }
     Ok(())
 }
 
 /// Work out what this invocation does, or why it cannot run.
-pub fn plan(args: &Args, env: Env) -> std::result::Result<Plan, PlanError> {
+pub fn plan(
+    args: &Args,
+    env: Env,
+    recovery: Option<Recovery>,
+) -> std::result::Result<Plan, PlanError> {
     validate(args)?;
+    if recovery.is_some() != args.from_receipt.is_some() {
+        bail!("internal error: receipt state does not match --from-receipt");
+    }
+    let user_id = args.user_id.clone().unwrap_or_default();
 
     let seed_source = match &args.input_filename {
         // An explicit -i wins over the prompt: the terminal only decides what
@@ -310,6 +418,18 @@ pub fn plan(args: &Args, env: Env) -> std::result::Result<Plan, PlanError> {
     let passphrase_in_derivation = !args.skip_passphrase_for_key_material;
     // Public keys are not encrypted, and age identities cannot be.
     let passphrase_encrypts_output = !args.public_key && args.format != OutputFormat::Age;
+
+    // A passphrase that feeds derivation is checked by the receipt's
+    // fingerprint, so asking for it twice adds nothing. Without a fingerprint,
+    // or when the passphrase only encrypts the output, a typo would go
+    // unnoticed, so keep the confirmation.
+    let passphrase_is_verified =
+        recovery.is_some_and(|r| r.has_fingerprint) && passphrase_in_derivation;
+    let confirm_passphrase = !passphrase_is_verified;
+    // A receipt is `nopass` when -n was used or no passphrase was entered, and
+    // apply_receipt turns that into -n. So in recovery, a passphrase in
+    // derivation means the receipt said `withpass`.
+    let passphrase_required = recovery.is_some() && passphrase_in_derivation;
 
     let algorithm = if args.use_concatenation {
         KeyAlgorithm::Concat
@@ -342,6 +462,14 @@ pub fn plan(args: &Args, env: Env) -> std::result::Result<Plan, PlanError> {
     if passphrase_was_given && !passphrase_in_derivation && !passphrase_encrypts_output {
         warnings.push(Warning::PassphraseUnused);
     }
+    if recovery.is_some_and(|r| !r.has_fingerprint) {
+        warnings.push(Warning::ReceiptHasNoFingerprint);
+    }
+    let input_files = [&args.input_filename, &args.from_receipt]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
 
     Ok(Plan {
         seed_source,
@@ -349,8 +477,10 @@ pub fn plan(args: &Args, env: Env) -> std::result::Result<Plan, PlanError> {
         passphrase_source,
         passphrase_in_derivation,
         passphrase_encrypts_output,
+        confirm_passphrase,
+        passphrase_required,
         algorithm,
-        user_id: args.user_id.clone(),
+        user_id,
         creation_timestamp_secs: creation_timestamp_secs(args),
         expiration_timestamp_secs: args.expiration_timestamp,
         generate_encrypt_key: !args.just_signkey,
@@ -363,6 +493,9 @@ pub fn plan(args: &Args, env: Env) -> std::result::Result<Plan, PlanError> {
         output,
         text_to_file: args.armor,
         text_to_stdout: args.armor || env.stdout_is_terminal,
+        receipt_output: args.output_receipt.clone(),
+        recovery,
+        input_files,
         warnings,
     })
 }
@@ -378,7 +511,7 @@ mod tests {
 
     fn base_args() -> Args {
         Args {
-            user_id: "Alice <alice@example.com>".to_string(),
+            user_id: Some("Alice <alice@example.com>".to_string()),
             input_filename: None,
             output_filename: None,
             timestamp: None,
@@ -398,6 +531,8 @@ mod tests {
             authorization_for_sign_key: false,
             auth_subkey: false,
             skip_passphrase_for_key_material: false,
+            output_receipt: None,
+            from_receipt: None,
         }
     }
 
@@ -412,12 +547,23 @@ mod tests {
         }
     }
 
-    const FLAG_BITS: u32 = 16;
+    const FLAG_BITS: u32 = 17;
+
+    const RECOVERIES: [Option<Recovery>; 3] = [
+        None,
+        Some(Recovery {
+            has_fingerprint: true,
+        }),
+        Some(Recovery {
+            has_fingerprint: false,
+        }),
+    ];
 
     /// Every combination of the flags that decide anything, with fixed
     /// stand-ins for the values that are only carried through. Calls `check`
-    /// 3 * 3 * 2^16 times.
-    fn for_each_invocation(mut check: impl FnMut(&Args, Env)) {
+    /// 3 * 3 * 2^17 * 3 times: with no receipt, and regenerating from one with
+    /// and without a fingerprint.
+    fn for_each_invocation(mut check: impl FnMut(&Args, Env, Option<Recovery>)) {
         for format in &FORMATS {
             for algorithm in &ALGORITHMS {
                 for n in 0..(1u32 << FLAG_BITS) {
@@ -439,11 +585,15 @@ mod tests {
                     args.creation_timestamp = bits.next().then_some(1_600_000_000);
                     args.expiration_timestamp = bits.next().then_some(1_700_000_000);
                     args.interactive = bits.next().then_some(true);
+                    args.output_receipt = bits.next().then(|| "receipt.html".to_string());
                     let env = Env {
                         stdin_is_terminal: bits.next(),
                         stdout_is_terminal: bits.next(),
                     };
-                    check(&args, env);
+                    for recovery in RECOVERIES {
+                        args.from_receipt = recovery.map(|_| "old-receipt.html".to_string());
+                        check(&args, env, recovery);
+                    }
                 }
             }
         }
@@ -452,8 +602,8 @@ mod tests {
     /// Like [`for_each_invocation`], but only the ones that are accepted.
     fn for_each_plan(mut check: impl FnMut(&Args, Env, &Plan)) {
         let mut accepted = 0u32;
-        for_each_invocation(|args, env| {
-            if let Ok(plan) = plan(args, env) {
+        for_each_invocation(|args, env, recovery| {
+            if let Ok(plan) = plan(args, env, recovery) {
                 accepted += 1;
                 check(args, env, &plan);
             }
@@ -609,14 +759,14 @@ mod tests {
 
     #[test]
     fn whether_flags_are_accepted_does_not_depend_on_the_terminal() {
-        for_each_invocation(|args, env| {
+        for_each_invocation(|args, env, recovery| {
             let piped = Env {
                 stdin_is_terminal: false,
                 stdout_is_terminal: false,
             };
             assert_eq!(
-                plan(args, env).is_ok(),
-                plan(args, piped).is_ok(),
+                plan(args, env, recovery).is_ok(),
+                plan(args, piped, recovery).is_ok(),
                 "{args:?} {env:?}"
             );
         });
@@ -624,11 +774,144 @@ mod tests {
 
     #[test]
     fn every_rejection_explains_itself() {
-        for_each_invocation(|args, env| {
-            if let Err(err) = plan(args, env) {
+        for_each_invocation(|args, env, recovery| {
+            if let Err(err) = plan(args, env, recovery) {
                 assert!(!err.to_string().trim().is_empty(), "{args:?}");
             }
         });
+    }
+
+    #[test]
+    fn receipts_are_never_written_for_age_keys() {
+        for_each_plan(|args, _env, plan| {
+            assert_eq!(plan.receipt_output, args.output_receipt, "{args:?}");
+            if plan.receipt_output.is_some() {
+                assert_ne!(plan.format, OutputFormat::Age, "{args:?}");
+            }
+        });
+    }
+
+    #[test]
+    fn recovery_requires_and_confirms_the_passphrase_as_the_receipt_dictates() {
+        for_each_plan(|args, _env, plan| {
+            let Some(recovery) = plan.recovery else {
+                assert!(plan.confirm_passphrase && !plan.passphrase_required);
+                assert!(!plan.warnings.contains(&Warning::ReceiptHasNoFingerprint));
+                return;
+            };
+            // withpass receipt: the passphrase is part of the key.
+            assert_eq!(
+                plan.passphrase_required, plan.passphrase_in_derivation,
+                "{args:?}"
+            );
+            // Only a fingerprint check on a passphrase that feeds the key
+            // makes the second prompt redundant.
+            assert_eq!(
+                plan.confirm_passphrase,
+                !(recovery.has_fingerprint && plan.passphrase_in_derivation),
+                "{args:?}"
+            );
+            assert_eq!(
+                plan.warnings.contains(&Warning::ReceiptHasNoFingerprint),
+                !recovery.has_fingerprint
+            );
+        });
+    }
+
+    #[test]
+    fn receipt_pass_role_is_withpass_only_when_a_passphrase_fed_the_key() {
+        for_each_plan(|_args, _env, plan| {
+            assert_eq!(plan.receipt_pass_role(false), PassRole::NoPass);
+            assert_eq!(
+                plan.receipt_pass_role(true) == PassRole::WithPass,
+                plan.passphrase_in_derivation
+            );
+        });
+    }
+
+    #[test]
+    fn applying_a_receipt_reproduces_its_parameters() {
+        // A receipt written for a plan, applied to empty flags, plans the
+        // same derivation. This is what makes --from-receipt regenerate the
+        // same key.
+        for_each_plan(|args, env, original| {
+            if original.recovery.is_some() || original.format == OutputFormat::Age {
+                return;
+            }
+            for has_passphrase in [false, true] {
+                let rec = Receipt {
+                    seed_format: original.seed_format.clone(),
+                    pass_role: original.receipt_pass_role(has_passphrase),
+                    algorithm: original.algorithm.clone(),
+                    rfc9106: original.use_rfc9106_settings,
+                    auth_subkey: original.generate_auth_key,
+                    sign_auth: original.use_authorization_for_sign_key,
+                    just_signkey: !original.generate_encrypt_key,
+                    ssh_format: original.format == OutputFormat::Ssh,
+                    created: original.creation_timestamp_secs,
+                    expires: original.expiration_timestamp_secs,
+                    user_id: original.user_id.clone(),
+                };
+                let mut recovered_args = base_args();
+                recovered_args.from_receipt = Some("old-receipt.html".to_string());
+                recovered_args.passphrase = has_passphrase.then(|| "hunter2".to_string());
+                apply_receipt(&mut recovered_args, &rec);
+                let recovery = Some(Recovery {
+                    has_fingerprint: true,
+                });
+                let recovered = plan(&recovered_args, env, recovery)
+                    .unwrap_or_else(|err| panic!("{args:?}: receipt rejected: {err}"));
+
+                let pass = has_passphrase.then_some("hunter2");
+                let a = original.key_settings(vec![7; 16], pass);
+                let b = recovered.key_settings(vec![7; 16], pass);
+                assert_eq!(recovered.algorithm, original.algorithm, "{args:?}");
+                assert_eq!(recovered.format, original.format, "{args:?}");
+                assert_eq!(a.user_id, b.user_id);
+                assert_eq!(a.passphrase, b.passphrase, "{args:?}");
+                assert_eq!(a.creation_timestamp_secs, b.creation_timestamp_secs);
+                assert_eq!(a.expiration_timestamp_secs, b.expiration_timestamp_secs);
+                assert_eq!(a.generate_encrypt_key, b.generate_encrypt_key);
+                assert_eq!(a.generate_auth_key, b.generate_auth_key);
+                assert_eq!(a.use_rfc9106_settings, b.use_rfc9106_settings);
+                assert_eq!(
+                    a.use_authorization_for_sign_key,
+                    b.use_authorization_for_sign_key
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn outputs_never_collide_with_inputs_or_each_other() {
+        let env = Env {
+            stdin_is_terminal: false,
+            stdout_is_terminal: false,
+        };
+        let recovery = Some(Recovery {
+            has_fingerprint: true,
+        });
+        let same = || Some("same".to_string());
+
+        let mut args = base_args();
+        args.output_filename = same();
+        args.output_receipt = same();
+        assert!(plan(&args, env, None).is_err(), "key and receipt");
+
+        let mut args = base_args();
+        args.input_filename = same();
+        args.output_receipt = same();
+        assert!(plan(&args, env, None).is_err(), "seed and receipt");
+
+        let mut args = base_args();
+        args.from_receipt = same();
+        args.output_receipt = same();
+        assert!(plan(&args, env, recovery).is_err(), "receipt in and out");
+
+        let mut args = base_args();
+        args.from_receipt = same();
+        args.output_filename = same();
+        assert!(plan(&args, env, recovery).is_err(), "receipt in and key");
     }
 
     #[test]
@@ -640,7 +923,7 @@ mod tests {
             stdin_is_terminal: false,
             stdout_is_terminal: false,
         };
-        let err = plan(&args, env).unwrap_err().to_string();
+        let err = plan(&args, env, None).unwrap_err().to_string();
         assert!(err.contains("overwrite the seed phrase"), "{err}");
     }
 
@@ -665,7 +948,9 @@ mod tests {
         /// Arbitrary values in every field, including the ones the exhaustive
         /// tests hold fixed: free text, paths and the full i64 range.
         fn any_args()(
-            user_id in ".*",
+            user_id in prop::option::of(".*"),
+            output_receipt in prop::option::of(".*"),
+            from_receipt in prop::option::of(".*"),
             input_filename in prop::option::of(".*"),
             output_filename in prop::option::of(".*"),
             timestamp in prop::option::of(any::<i64>()),
@@ -698,6 +983,8 @@ mod tests {
                 authorization_for_sign_key: bits.next(),
                 auth_subkey: bits.next(),
                 skip_passphrase_for_key_material: bits.next(),
+                output_receipt,
+                from_receipt,
             }
         }
     }
@@ -710,12 +997,14 @@ mod tests {
             args in any_args(),
             stdin_is_terminal in any::<bool>(),
             stdout_is_terminal in any::<bool>(),
+            has_fingerprint in any::<bool>(),
         ) {
             let env = Env { stdin_is_terminal, stdout_is_terminal };
             // Must not panic, whatever the values.
-            let Ok(plan) = plan(&args, env) else { return Ok(()) };
+            let recovery = args.from_receipt.as_ref().map(|_| Recovery { has_fingerprint });
+            let Ok(plan) = plan(&args, env, recovery) else { return Ok(()) };
 
-            prop_assert_eq!(&plan.user_id, &args.user_id);
+            prop_assert_eq!(Some(&plan.user_id), args.user_id.as_ref());
             prop_assert_eq!(&plan.seed_format, &args.seed_format);
             prop_assert_eq!(plan.use_rfc9106_settings, args.use_rfc9106_settings);
             prop_assert_eq!(plan.generate_encrypt_key, !args.just_signkey);
@@ -742,6 +1031,21 @@ mod tests {
                 (&plan.seed_source, &plan.output)
             {
                 prop_assert_ne!(seed, key);
+            }
+            // No output lands on an input or on the other output.
+            let key_file = match &plan.output {
+                OutputTarget::File(key) => Some(key),
+                _ => None,
+            };
+            for output in [key_file, plan.receipt_output.as_ref()].into_iter().flatten() {
+                prop_assert!(!plan.input_files.contains(output));
+            }
+            if key_file.is_some() {
+                prop_assert_ne!(key_file, plan.receipt_output.as_ref());
+            }
+            // A receipt is only written for a user ID it can carry.
+            if plan.receipt_output.is_some() {
+                prop_assert!(receipt::validate_user_id(&plan.user_id).is_ok());
             }
             // -o "" is standard output, never a file with an empty name.
             prop_assert_ne!(&plan.output, &OutputTarget::File(String::new()));

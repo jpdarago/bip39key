@@ -110,9 +110,17 @@ pub fn from_pinentry() -> Result<String> {
     }
 }
 
-pub fn from_interactive_prompt() -> Result<String> {
+/// Ask for the passphrase on the terminal. `confirm` asks for it twice, which
+/// guards against a typo when nothing else can catch one; callers that verify
+/// the derived key afterwards (recovery from a receipt with a fingerprint)
+/// pass false.
+pub fn from_interactive_prompt(confirm: bool) -> Result<String> {
     loop {
-        let password = Password::new("Enter your password:").prompt()?;
+        let mut prompt = Password::new("Enter your password:");
+        if !confirm {
+            prompt = prompt.without_confirmation();
+        }
+        let password = prompt.prompt()?;
         if !password.is_empty() {
             return Ok(password);
         }

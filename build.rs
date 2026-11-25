@@ -6,9 +6,96 @@ use std::path::Path;
 
 include!("src/cli.rs");
 
+fn git(args: &[&str]) -> Option<String> {
+    std::process::Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+}
+
+/// `HEAD` as a full hash, with `-dirty` appended when the sources differ from
+/// it. A receipt must not claim a clean commit reproduces a binary that was
+/// built from modified sources.
+///
+/// Returns `None` unless this package is the root of the git repository. git
+/// walks up to any enclosing repository, so a source tree unpacked inside
+/// someone else's repo (a vendored copy, ~/.cargo under a dotfiles repo)
+/// would otherwise report that repo's unrelated HEAD as bip39key's commit.
+fn git_commit() -> Option<String> {
+    let toplevel = git(&["rev-parse", "--show-toplevel"])?;
+    let same_dir = match (
+        fs::canonicalize(&toplevel),
+        fs::canonicalize(env!("CARGO_MANIFEST_DIR")),
+    ) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    };
+    if !same_dir {
+        return None;
+    }
+    let head = git(&["rev-parse", "HEAD"])?;
+    // Tracked changes anywhere, plus untracked files where they can change
+    // the binary: a new src/*.rs file is compiled without ever being added.
+    let dirty = git(&[
+        "status",
+        "--porcelain",
+        "--untracked-files=all",
+        "--",
+        ".",
+        ":(exclude)target",
+    ])
+    .is_some_and(|status| {
+        status.lines().any(|line| {
+            !line.starts_with("??") || {
+                let path = line[2..].trim_start();
+                path.starts_with("src/")
+                    || path.starts_with("resources/")
+                    || path == "build.rs"
+                    || path == "Cargo.toml"
+            }
+        })
+    });
+    Some(if dirty { format!("{head}-dirty") } else { head })
+}
+
 fn main() -> std::io::Result<()> {
     println!("cargo:rerun-if-changed=src/cli.rs");
     println!("cargo:rerun-if-changed=build.rs");
+
+    // Embed the git commit hash at compile time for receipt provenance. An
+    // explicit BIP39KEY_COMMIT environment variable wins over git: builds from
+    // a source tree without .git (Nix sandbox, source tarballs) can inject the
+    // commit and still produce an identical binary.
+    let commit = std::env::var("BIP39KEY_COMMIT")
+        .ok()
+        .filter(|c| !c.is_empty())
+        .or_else(git_commit)
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=BIP39KEY_COMMIT={}", commit);
+    println!("cargo:rerun-if-env-changed=BIP39KEY_COMMIT");
+    println!(
+        "cargo:rustc-env=BIP39KEY_TARGET={}",
+        std::env::var("TARGET").unwrap_or_else(|_| "unknown".to_string())
+    );
+    // Re-run when anything compiled into the binary changes, so the dirty
+    // marker tracks the working tree rather than the last build. resources/
+    // is here because seed.rs embeds the wordlist with include_str!.
+    for path in ["src", "resources", "Cargo.toml", "Cargo.lock"] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    // Re-run when HEAD moves. git is asked where these live, because .git is
+    // a file in a worktree and absent in a source tarball. Paths that do not
+    // exist are skipped: cargo treats a missing path as always changed, which
+    // would rerun this script, and recompile the crate, on every build.
+    for name in ["HEAD", "index", "packed-refs", "refs"] {
+        if let Some(path) = git(&["rev-parse", "--git-path", name]) {
+            if Path::new(&path).exists() {
+                println!("cargo:rerun-if-changed={path}");
+            }
+        }
+    }
 
     let mut cmd = Args::command();
     cmd = cmd.name("bip39key");

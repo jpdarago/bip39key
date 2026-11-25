@@ -23,7 +23,7 @@ _bip39key() {
 
     case "${cmd}" in
         bip39key)
-            opts="-u -i -o -t -d -y -j -f -a -k -p -e -s -c -g -q -r -b -n -h -V --user-id --input-filename --output-filename --timestamp --creation-timestamp --expiration-timestamp --just-signkey --format --armor --public-key --passphrase --pinentry --seed-format --use-concatenation --algorithm --interactive --use-rfc9106-settings --authorization-for-sign-key --auth-subkey --skip-passphrase-for-key-material --help --version"
+            opts="-u -i -o -t -d -y -j -f -a -k -p -e -s -c -g -q -r -b -n -h -V --user-id --input-filename --output-filename --timestamp --creation-timestamp --expiration-timestamp --just-signkey --format --armor --public-key --passphrase --pinentry --seed-format --use-concatenation --algorithm --interactive --use-rfc9106-settings --authorization-for-sign-key --auth-subkey --skip-passphrase-for-key-material --output-receipt --from-receipt --help --version"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -115,6 +115,14 @@ _bip39key() {
                     ;;
                 -q)
                     COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --output-receipt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --from-receipt)
+                    COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 *)
