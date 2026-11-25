@@ -1517,3 +1517,42 @@ fn test_skip_passphrase_still_encrypts_the_key_file() {
     let plain_public = run_ssh_keygen(&plain.stdout, "").unwrap();
     assert_eq!(unlocked.stdout, plain_public.stdout);
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn test_input_file_is_read_when_stdin_is_a_terminal() {
+    // -i used to be ignored on a terminal: the seed prompt came first. script(1)
+    // gives the child a pty on stdin, which a plain Command cannot.
+    if cmd("script", &["--version"]).stdout_null().run().is_err() {
+        eprintln!("skipping: script(1) not found");
+        return;
+    }
+    let dir = TempDir::new().unwrap();
+    let seed_path = dir.path().join("seed.txt");
+    let key_path = dir.path().join("identity.txt");
+    fs::write(&seed_path, BIP39.join(" ")).unwrap();
+
+    let command = format!(
+        "'{}' -u '{}' -f age -g hkdf -r -p '{}' -i '{}' -o '{}'",
+        env!("CARGO_BIN_EXE_bip39key"),
+        userid(),
+        PASS,
+        seed_path.display(),
+        key_path.display(),
+    );
+    let output = cmd("script", &["-qec", &command, "/dev/null"])
+        .stdin_null()
+        .stdout_capture()
+        .unchecked()
+        .run()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "bip39key failed on a terminal: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let flags = ["-f", "age", "-g", "hkdf", "-r", "-p", PASS];
+    let piped = run_bip39key(BIP39, &userid(), &flags).unwrap();
+    assert_eq!(fs::read(&key_path).unwrap(), piped.stdout);
+}

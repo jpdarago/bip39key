@@ -66,12 +66,14 @@ fn get_passphrase(args: &Args) -> Result<Option<String>> {
 }
 
 fn get_seed(args: &Args) -> Result<Vec<u8>> {
-    if console::is_input_interactive() {
-        return seed::from_prompt(&args.seed_format);
-    }
+    // An explicit -i wins over the prompt: the terminal check only decides what
+    // to do when no file was named.
     let mut phrase = String::new();
     if let Some(input_filename) = &args.input_filename {
-        phrase = std::fs::read_to_string(input_filename)?;
+        phrase = std::fs::read_to_string(input_filename)
+            .with_context(|| format!("Could not read seed phrase from {input_filename}"))?;
+    } else if console::is_input_interactive() {
+        return seed::from_prompt(&args.seed_format);
     } else {
         std::io::stdin().read_to_string(&mut phrase)?;
     }
