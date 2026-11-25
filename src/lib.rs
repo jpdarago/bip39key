@@ -15,6 +15,7 @@ pub mod cli;
 pub mod keys;
 pub mod passphrase;
 pub mod pgp;
+pub mod plan;
 pub mod seed;
 pub mod ssh;
 pub mod types;

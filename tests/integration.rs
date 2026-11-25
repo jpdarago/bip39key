@@ -1556,3 +1556,31 @@ fn test_input_file_is_read_when_stdin_is_a_terminal() {
     let piped = run_bip39key(BIP39, &userid(), &flags).unwrap();
     assert_eq!(fs::read(&key_path).unwrap(), piped.stdout);
 }
+
+#[test]
+fn test_output_onto_seed_file_is_rejected() {
+    // The seed is read before the key is written, so this used to succeed and
+    // leave the seed phrase replaced by the key. Both spellings fail before
+    // derivation: the literal one in plan.rs, the other when paths resolve.
+    let dir = TempDir::new().unwrap();
+    let seed_path = dir.path().join("seed.txt");
+    let phrase = BIP39.join(" ");
+    fs::write(&seed_path, &phrase).unwrap();
+    let seed = seed_path.to_str().unwrap().to_string();
+    let respelled = dir.path().join(".").join("seed.txt");
+
+    for output in [seed.as_str(), respelled.to_str().unwrap()] {
+        let args = ["-u", "A <a@b>", "-i", seed.as_str(), "-o", output];
+        let result = cmd(env!("CARGO_BIN_EXE_bip39key"), args)
+            .stdin_null()
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .unwrap();
+        assert!(!result.status.success(), "-o {output} was accepted");
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert!(stderr.contains("overwrite the seed phrase"), "{stderr}");
+        assert_eq!(fs::read_to_string(&seed_path).unwrap(), phrase);
+    }
+}

@@ -23,7 +23,7 @@ devenv test                              # Run the whole suite (via devenv)
 
 Tests come in two layers. `tests/integration.rs` exercises the binary end-to-end against GPG and ssh-keygen; these are slow, because each one pays for a real Argon2id derivation (4.0s on the default config, 1.6s on RFC 9106). Golden test files (`test/message-*.gpg`) contain encrypted messages that must decrypt correctly with known seed/passphrase combos.
 
-Unit and property tests live in `#[cfg(test)]` modules inside the library (`src/pgp.rs`, `src/ssh.rs`, `src/age.rs`, `src/seed.rs`, `src/passphrase.rs`) and run in microseconds, since they test the pure encoders rather than key derivation. `proptest` covers packet length headers, MPI encoding, the armor CRC-24, and the OpenSSH length-prefix framing and padding. Prefer adding coverage here when the behavior under test does not need a derived key.
+Unit and property tests live in `#[cfg(test)]` modules inside the library (`src/pgp.rs`, `src/ssh.rs`, `src/age.rs`, `src/seed.rs`, `src/passphrase.rs`, `src/plan.rs`) and run in microseconds, since they test the pure encoders rather than key derivation. `proptest` covers packet length headers, MPI encoding, the armor CRC-24, and the OpenSSH length-prefix framing and padding. Prefer adding coverage here when the behavior under test does not need a derived key.
 
 Known-answer tests in `src/keys.rs` and `src/seed.rs` check each derivation stage against its published vectors (Trezor BIP39, Electrum, RFC 5869, 9106, 7748, 8032), so a dependency upgrade that moves the golden vectors points at the stage that changed. They also pin two quirks that can never change: `-r` uses `argon2::Config::rfc9106()`, which has 1 lane (not the RFC's p=4), and the Electrum seed's PBKDF2 salt is the base64-*decoded* `"electrum"`, so it is not Electrum's own seed.
 
@@ -85,7 +85,8 @@ devenv configures git hooks for `rustfmt` and `clippy`.
 ## Architecture
 
 - **`lib.rs`** — Library root. The modules below live here so tests can exercise them in process; `main.rs` is a thin wrapper over it.
-- **`main.rs`** — CLI entry point (clap). Parses args, reads seed (stdin/file/interactive prompt), gets passphrase, generates keys, writes output.
+- **`main.rs`** — CLI entry point (clap). Parses args, builds a `Plan`, then carries it out: reads the seed, gets the passphrase, generates keys, writes output. It makes no decisions of its own.
+- **`plan.rs`** — Pure function from `Args` plus terminal state (`Env`) to a `Plan` or a rejection: seed source, passphrase source and what the passphrase is used for, resolved algorithm, output target, warnings. No I/O. Its tests enumerate every flag combination (about 590k) and check invariants, plus proptest for free-text and timestamp values. **Any decision that depends on flags or on whether stdin/stdout is a terminal goes here, with an invariant, not in `main.rs`.**
 - **`keys.rs`** — Core key derivation. `Keys::new_with_concat` (preferred) and `Keys::new_with_xor` (legacy) run Argon2id to expand seed+passphrase into 64 bytes, split into sign key (first 32) and encrypt key (last 32). `KeySettings` holds all derivation parameters.
 - **`pgp.rs`** — OpenPGP v4 packet serialization. Handles packet encoding, MPI format, S2K passphrase encryption (AES-256-CFB), self-signatures, subkey binding signatures, and ASCII armor output. Implements RFC 4880 directly without external PGP libraries.
 - **`ssh.rs`** — OpenSSH private/public key serialization. Handles the `openssh-key-v1` format with optional AES-256-CTR encryption via bcrypt-pbkdf.
