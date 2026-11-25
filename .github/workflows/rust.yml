@@ -107,6 +107,51 @@ jobs:
         with:
           command: check licenses bans sources
 
+  deb:
+    name: Debian package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v7
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      # The release builds this target with cross; plain cargo is enough for
+      # x86_64 and is what a tag push would package.
+      - name: Build the static binary
+        run: cargo build --locked --release --target x86_64-unknown-linux-musl
+
+      - name: Build the package twice
+        run: |
+          binary=target/x86_64-unknown-linux-musl/release/bip39key
+          scripts/build-deb.sh "$binary" amd64 deb
+          scripts/build-deb.sh "$binary" amd64 deb-again
+
+      - name: Check the package is reproducible
+        run: cmp deb/*.deb deb-again/*.deb
+
+      # The binary must be static: a dynamic one would need a Depends line
+      # the package does not have.
+      - name: Check the binary is statically linked
+        run: |
+          file target/x86_64-unknown-linux-musl/release/bip39key | tee /dev/stderr \
+            | grep -Eq 'static(ally|-pie) linked'
+
+      - name: Install and run it
+        run: |
+          sudo dpkg -i deb/*.deb
+          version=$(grep -m1 '^version' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          test "$(/usr/bin/bip39key --version)" = "bip39key $version"
+          test "$(dpkg-query -W -f='${Version}' bip39key)" = "$version"
+          man -w bip39key
+          test -f /usr/share/bash-completion/completions/bip39key
+          test -f /usr/share/zsh/vendor-completions/_bip39key
+          sudo dpkg -r bip39key
+          test ! -e /usr/bin/bip39key
+
   tests:
     strategy:
       # One OS failing must not cancel the other: GPG differs per runner, and
