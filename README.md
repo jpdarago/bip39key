@@ -348,6 +348,12 @@ terminal, for example in a script or a pipe. Run from a terminal, bip39key
 prompted for the seed phrase and never read the file. No wrong key was ever
 produced: the key came from whatever was typed at the prompt.
 
+### `-o` could overwrite the seed file (fixed in 1.9.2)
+
+Up to 1.9.1, `-i seed.txt -o seed.txt` was accepted. The seed is read before the
+key is written, so the run succeeded and left the seed phrase replaced by the
+key. bip39key now refuses to write the key onto the seed file.
+
 ### The `xor` algorithm leaks more than it should
 
 The default `--algorithm xor` lets someone who has both your passphrase and
