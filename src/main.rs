@@ -1,5 +1,6 @@
 use bip39key::cli::{Args, KeyAlgorithm, OutputFormat};
 use bip39key::keys::*;
+use bip39key::plan::{self, Env, OutputTarget, PassphraseSource, Plan, SeedSource};
 use bip39key::types::*;
 use bip39key::{age, console, console_logln, passphrase, pgp, seed, ssh};
 
@@ -10,15 +11,18 @@ use std::io::BufWriter;
 use std::io::IsTerminal;
 use std::io::Read;
 
+// Everything in this file carries out a Plan. Decisions about flags and the
+// terminal belong in plan.rs, where they are tested for every combination.
+
 fn write_keys<W: std::io::Write>(
-    args: &Args,
+    plan: &Plan,
     keys: &Keys,
     mut writer: BufWriter<W>,
     output_as_text: bool,
 ) -> Result<()> {
-    match args.format {
+    match plan.format {
         OutputFormat::Pgp => {
-            if args.public_key {
+            if plan.public_key {
                 if output_as_text {
                     pgp::output_public_armored(keys, &mut writer)?;
                 } else {
@@ -31,14 +35,14 @@ fn write_keys<W: std::io::Write>(
             }
         }
         OutputFormat::Ssh => {
-            if args.public_key {
+            if plan.public_key {
                 ssh::output_public_as_pem(keys, &mut writer)?;
             } else {
                 ssh::output_secret_as_pem(keys, &mut writer)?;
             }
         }
         OutputFormat::Age => {
-            if args.public_key {
+            if plan.public_key {
                 age::output_public(keys, &mut writer)?;
             } else {
                 age::output_secret(keys, &mut writer)?;
@@ -48,34 +52,29 @@ fn write_keys<W: std::io::Write>(
     Ok(())
 }
 
-fn get_passphrase(args: &Args) -> Result<Option<String>> {
-    if args.pinentry {
-        Ok(Some(passphrase::from_pinentry()?))
-    } else if let Some(pass) = &args.passphrase {
-        Ok(Some(pass.clone()))
-    } else if console::is_input_interactive() {
-        let passphrase = passphrase::from_interactive_prompt()?;
-        if passphrase.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(passphrase))
+fn get_passphrase(plan: &Plan) -> Result<Option<String>> {
+    match &plan.passphrase_source {
+        PassphraseSource::Pinentry => Ok(Some(passphrase::from_pinentry()?)),
+        PassphraseSource::Flag(pass) => Ok(Some(pass.clone())),
+        PassphraseSource::Prompt => {
+            let passphrase = passphrase::from_interactive_prompt()?;
+            Ok(Some(passphrase).filter(|p| !p.is_empty()))
         }
-    } else {
-        Ok(None)
+        PassphraseSource::None => Ok(None),
     }
 }
 
-fn get_seed(args: &Args) -> Result<Vec<u8>> {
-    // An explicit -i wins over the prompt: the terminal check only decides what
-    // to do when no file was named.
+fn get_seed(plan: &Plan) -> Result<Vec<u8>> {
     let mut phrase = String::new();
-    if let Some(input_filename) = &args.input_filename {
-        phrase = std::fs::read_to_string(input_filename)
-            .with_context(|| format!("Could not read seed phrase from {input_filename}"))?;
-    } else if console::is_input_interactive() {
-        return seed::from_prompt(&args.seed_format);
-    } else {
-        std::io::stdin().read_to_string(&mut phrase)?;
+    match &plan.seed_source {
+        SeedSource::File(input_filename) => {
+            phrase = std::fs::read_to_string(input_filename)
+                .with_context(|| format!("Could not read seed phrase from {input_filename}"))?;
+        }
+        SeedSource::Prompt => return seed::from_prompt(&plan.seed_format),
+        SeedSource::Stdin => {
+            std::io::stdin().read_to_string(&mut phrase)?;
+        }
     }
     let mut stripped = String::new();
     for word in phrase.split_whitespace() {
@@ -85,17 +84,15 @@ fn get_seed(args: &Args) -> Result<Vec<u8>> {
         stripped.push_str(word);
         stripped.push(' ');
     }
-    seed::decode_phrase(&args.seed_format, stripped.trim())
+    seed::decode_phrase(&plan.seed_format, stripped.trim())
 }
 
-fn output_keys_to_stdout(args: &Args, keys: &Keys) -> Result<()> {
-    let stdout = std::io::stdout();
-    let is_terminal = stdout.is_terminal();
+fn output_keys_to_stdout(plan: &Plan, keys: &Keys) -> Result<()> {
     write_keys(
-        args,
+        plan,
         keys,
-        BufWriter::new(stdout),
-        /*output_as_text=*/ args.armor || is_terminal,
+        BufWriter::new(std::io::stdout()),
+        /*output_as_text=*/ plan.text_to_stdout,
     )
 }
 
@@ -128,130 +125,63 @@ fn set_permissions(_output: &std::fs::File, _public_key: bool) -> Result<()> {
     Ok(())
 }
 
-fn output_keys(args: &Args, keys: &Keys) -> Result<()> {
-    let filename = if args.output_filename.is_some() {
-        args.output_filename.as_ref().map(|f| f.to_string())
-    } else if console::is_input_interactive() {
-        Some(Text::new("Provide an output filename for the key (empty for stdout): ").prompt()?)
-    } else {
-        None
+/// Refuse to write the key over the seed file. plan.rs rejects the same path
+/// spelled the same way; this catches other spellings (./seed.txt, symlinks)
+/// and a filename typed at the prompt. A file that does not exist yet cannot
+/// be the seed file, so failing to resolve it is not an error.
+fn ensure_not_seed_file(plan: &Plan, output_filename: &str) -> Result<()> {
+    let SeedSource::File(seed_filename) = &plan.seed_source else {
+        return Ok(());
     };
-    if let Some(f) = filename {
-        if f.is_empty() {
-            return output_keys_to_stdout(args, keys);
-        }
-        let mut opts = std::fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true);
-        set_creation_permissions(&mut opts, args.public_key);
-        let output = match opts.open(&f) {
-            Ok(output) => output,
-            Err(err) => bail!("Cannot open output file {}: {}", f, err),
-        };
-        set_permissions(&output, args.public_key)?;
-        write_keys(
-            args,
-            keys,
-            BufWriter::new(output),
-            /*output_as_text=*/ args.armor,
-        )
-    } else {
-        output_keys_to_stdout(args, keys)
-    }
-}
-
-fn get_creation_timestamp_secs(args: &Args) -> i64 {
-    args.creation_timestamp
-        .or(args.timestamp)
-        .unwrap_or(DEFAULT_CREATION_TIMESTAMP)
-}
-
-fn validate(args: &Args) -> Result<()> {
-    if args.interactive.is_some() {
-        console_logln!("WARNING: -q/--interactive flag is deprecated. You probably want an earlier BIP39 version.");
-    }
-    if args.creation_timestamp.is_some() && args.timestamp.is_some() {
-        bail!("--timestamp (-t) flag is deprecated, use --creation-timestamp");
-    }
-    let creation_timestamp_secs = get_creation_timestamp_secs(args);
-    if creation_timestamp_secs < 0 {
-        bail!("--creation-timestamp must be a positive number");
-    }
-    if let Some(expiration_secs) = args.expiration_timestamp {
-        if expiration_secs < 0 {
-            bail!("--expiration-timestamp must be a positive number");
-        }
-        if expiration_secs < creation_timestamp_secs {
-            bail!(
-                "--expiration-timestamp is before creation timestamp: {} vs {}",
-                expiration_secs,
-                creation_timestamp_secs
-            );
-        }
-    }
-    // Enforce the OpenPGP v4 u32 limits, which would otherwise panic in
-    // pgp.rs after the expensive Argon2id derivation has already run.
-    if args.format == OutputFormat::Pgp {
-        pgp::validate_timestamps(creation_timestamp_secs, args.expiration_timestamp)?;
-    }
-    if args.just_signkey && args.format == OutputFormat::Ssh {
-        bail!("Subkey option (--subkey/-s) only works with PGP output format.");
-    }
-    if args.armor && args.format != OutputFormat::Pgp {
-        bail!("Armor option (--armor/-a) only works with PGP output format.");
-    }
-    if args.format == OutputFormat::Age {
-        // The age key has its own HKDF info string, so it is independent of
-        // the PGP encryption subkey. xor and concat only produce the 64 bytes
-        // the sign and encrypt keys already use, so they cannot derive it.
-        if args.algorithm != KeyAlgorithm::Hkdf || args.use_concatenation {
-            bail!("age output requires --algorithm hkdf (-g hkdf).");
-        }
-        // age keys are a single X25519 key: there is no signing key to
-        // restrict to, and no subkeys or capabilities to add.
-        if args.just_signkey {
-            bail!("Subkey option (--just-signkey/-j) only works with PGP output format.");
-        }
-        if args.auth_subkey {
-            bail!("--auth-subkey only works with PGP output format.");
-        }
-        if args.authorization_for_sign_key {
-            bail!("--authorization-for-sign-key (-b) only works with PGP output format.");
-        }
-        // age identity files cannot be passphrase protected, so with -n the
-        // passphrase would do nothing at all.
-        if args.skip_passphrase_for_key_material {
-            bail!(
-                "--skip-passphrase-for-key-material (-n) does not work with age output: \
-                 age keys cannot be passphrase protected, so the passphrase would be unused."
-            );
-        }
-        if args.expiration_timestamp.is_some() {
-            bail!("--expiration-timestamp (-y) does not work with age output: age keys do not expire.");
-        }
-        if args.creation_timestamp.is_some() || args.timestamp.is_some() {
-            bail!(
-                "--creation-timestamp (-d) does not work with age output: age keys carry no timestamp."
-            );
-        }
-    }
-    if args.passphrase.is_some() && args.pinentry {
-        bail!("One of --passphrase/--pinentry must be set at a time.");
-    }
-    if args.use_concatenation && args.algorithm != KeyAlgorithm::Xor {
-        bail!("-c/--use-concatenation cannot be combined with --algorithm. Use --algorithm alone.");
-    }
-    if args.auth_subkey && args.algorithm != KeyAlgorithm::Hkdf {
-        bail!("--auth-subkey requires --algorithm hkdf.");
+    let (Ok(seed), Ok(output)) = (
+        std::fs::canonicalize(seed_filename),
+        std::fs::canonicalize(output_filename),
+    ) else {
+        return Ok(());
+    };
+    if seed == output {
+        bail!(
+            "Output file {} is the seed file: the key would overwrite the seed phrase.",
+            output_filename
+        );
     }
     Ok(())
+}
+
+fn output_keys(plan: &Plan, keys: &Keys) -> Result<()> {
+    let target = match &plan.output {
+        OutputTarget::Ask => OutputTarget::from_answer(
+            &Text::new("Provide an output filename for the key (empty for stdout): ").prompt()?,
+        ),
+        target => target.clone(),
+    };
+    let filename = match target {
+        OutputTarget::File(filename) => filename,
+        OutputTarget::Stdout | OutputTarget::Ask => return output_keys_to_stdout(plan, keys),
+    };
+    ensure_not_seed_file(plan, &filename)?;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    set_creation_permissions(&mut opts, plan.public_key);
+    let output = match opts.open(&filename) {
+        Ok(output) => output,
+        Err(err) => bail!("Cannot open output file {}: {}", filename, err),
+    };
+    set_permissions(&output, plan.public_key)?;
+    write_keys(
+        plan,
+        keys,
+        BufWriter::new(output),
+        /*output_as_text=*/ plan.text_to_file,
+    )
 }
 
 /// Format the key fingerprint for display.
 /// PGP: groups of 4 hex chars separated by spaces, with a double space in the middle
 /// (e.g. "67EA E069 0476 6020 FB5B  41B3 14B8 857D 6EFD 7E9F").
 /// SSH: SHA256 hash of the public key in base64 (e.g. "SHA256:...").
-fn format_fingerprint(args: &Args, keys: &Keys) -> Result<String> {
-    match args.format {
+fn format_fingerprint(plan: &Plan, keys: &Keys) -> Result<String> {
+    match plan.format {
         OutputFormat::Pgp => {
             let fp = pgp::key_fingerprint(&keys.sign_key)?;
             let hex: Vec<String> = fp.iter().map(|b| format!("{:02X}", b)).collect();
@@ -277,68 +207,37 @@ fn main() -> Result<()> {
     console_logln!("Welcome to BIP39Key");
 
     let args = Args::parse();
-    validate(&args)?;
+    let env = Env {
+        stdin_is_terminal: console::is_input_interactive(),
+        stdout_is_terminal: std::io::stdout().is_terminal(),
+    };
+    let plan = plan::plan(&args, env)?;
+    for warning in &plan.warnings {
+        console_logln!("{}", warning.message());
+    }
+    // Before the slow derivation, when -o already names the file.
+    if let OutputTarget::File(filename) = &plan.output {
+        ensure_not_seed_file(&plan, filename)?;
+    }
 
-    let creation_timestamp_secs = get_creation_timestamp_secs(&args);
-    let expiration_timestamp_secs = args.expiration_timestamp;
-    let seed = get_seed(&args)?;
-    let pass = get_passphrase(&args)?;
+    let seed = get_seed(&plan)?;
+    let pass = get_passphrase(&plan)?;
     if pass.is_none() {
         console_logln!("WARNING: Using no passphrase");
     }
-    let settings = KeySettings {
-        user_id: args.user_id.clone(),
-        seed,
-        passphrase: if args.skip_passphrase_for_key_material {
-            None
-        } else {
-            pass.clone()
-        },
-        creation_timestamp_secs,
-        expiration_timestamp_secs,
-        generate_encrypt_key: !args.just_signkey,
-        generate_auth_key: args.auth_subkey,
-        generate_age_key: args.format == OutputFormat::Age,
-        use_rfc9106_settings: args.use_rfc9106_settings,
-        use_authorization_for_sign_key: args.authorization_for_sign_key,
-    };
-    let algorithm = if args.use_concatenation {
-        KeyAlgorithm::Concat
-    } else {
-        args.algorithm.clone()
-    };
-    match algorithm {
-        KeyAlgorithm::Xor => {
-            console_logln!(
-                "WARNING: xor algorithm is deprecated. Use --algorithm hkdf for new keys."
-            );
-        }
-        KeyAlgorithm::Concat => {
-            console_logln!(
-                "WARNING: concat algorithm is deprecated. Use --algorithm hkdf for new keys."
-            );
-        }
-        KeyAlgorithm::Hkdf => {}
-    }
+    let settings = plan.key_settings(seed, pass.as_deref());
     console_logln!("Generating key entropy");
-    let mut keys = match algorithm {
+    let mut keys = match plan.algorithm {
         KeyAlgorithm::Hkdf => Keys::new_with_hkdf(settings),
         KeyAlgorithm::Concat => Keys::new_with_concat(settings),
         KeyAlgorithm::Xor => Keys::new_with_xor(settings),
     }
     .context("Could not build keys")?;
-    if args.skip_passphrase_for_key_material {
-        // -n keeps the passphrase out of derivation, but it still protects
-        // the key file. Keys.passphrase is what pgp.rs and ssh.rs encrypt
-        // with, and derivation above left it empty.
-        keys.passphrase = pass;
-    }
+    // Keys.passphrase is what pgp.rs and ssh.rs encrypt the key file with.
+    // The plan decides that separately from derivation, so -n cannot leave a
+    // key file unprotected.
+    keys.passphrase = plan.output_passphrase(pass.as_deref());
     console_logln!("Done generating key entropy");
-    console_logln!("{}", format_fingerprint(&args, &keys)?);
-    if args.format == OutputFormat::Age && !args.public_key {
-        console_logln!(
-            "WARNING: age identities cannot be passphrase protected. The secret key is written in plaintext."
-        );
-    }
-    output_keys(&args, &keys)
+    console_logln!("{}", format_fingerprint(&plan, &keys)?);
+    output_keys(&plan, &keys)
 }
