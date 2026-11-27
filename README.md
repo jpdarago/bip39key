@@ -473,6 +473,15 @@ Up to 1.9.1, `-i seed.txt -o seed.txt` was accepted. The seed is read before the
 key is written, so the run succeeded and left the seed phrase replaced by the
 key. bip39key now refuses to write the key onto the seed file.
 
+### A pasted seed phrase stayed visible at the interactive prompt (fixed in 1.10.2)
+
+The interactive prompt replaces each line of seed words with `****` once you
+press Enter. Up to 1.10.1 it cleared only one terminal row, so a line long
+enough to wrap, such as a whole phrase typed or pasted at once, stayed readable
+on screen and in the terminal scrollback apart from its last row. Words entered
+one per line were masked correctly. Nothing was written to disk; close or clear
+a terminal where a phrase was entered this way.
+
 ### The `xor` algorithm leaks more than it should
 
 The default `--algorithm xor` lets someone who has both your passphrase and

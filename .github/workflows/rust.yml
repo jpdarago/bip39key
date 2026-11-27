@@ -179,9 +179,11 @@ jobs:
 
       # GPG and ssh-keygen ship on both runner images; age does not. The
       # integration tests check age output against the real age binaries.
-      - name: Install age (Linux)
+      # tmux renders the interactive seed prompt for the test that checks no
+      # seed word is left on screen.
+      - name: Install age and tmux (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y age
+        run: sudo apt-get update && sudo apt-get install -y age tmux
 
       - name: Install age (macOS)
         if: runner.os == 'macOS'

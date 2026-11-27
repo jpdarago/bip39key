@@ -2273,3 +2273,57 @@ fn test_receipt_without_subkey_fingerprints_is_rejected() {
     assert!(stderr.contains("carries no fingerprint"), "{stderr}");
     assert_eq!(fs::read(&key).unwrap(), fs::read(&out).unwrap());
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn test_seed_prompt_masks_a_wrapped_line() {
+    // A pasted phrase wraps over two terminal rows at 80 columns. The prompt
+    // used to clear only the last row after Enter, leaving most of the phrase
+    // readable. tmux renders the escape sequences, so the capture is what a
+    // person would see, scrollback included.
+    if cmd("tmux", ["-V"]).stdout_null().run().is_err() {
+        eprintln!("skipping: tmux not found");
+        return;
+    }
+    let socket = format!("bip39key-test-{}", std::process::id());
+    let tmux = |args: &[&str]| {
+        let mut full = vec!["-L", socket.as_str(), "-f", "/dev/null"];
+        full.extend(args);
+        cmd("tmux", full)
+            .stdout_capture()
+            .unchecked()
+            .run()
+            .unwrap()
+    };
+    let command = format!(
+        "'{}' -g hkdf -r -u '{}' -p x -f ssh -k -o /dev/null; sleep 60",
+        env!("CARGO_BIN_EXE_bip39key"),
+        userid(),
+    );
+    tmux(&["new-session", "-d", "-x", "80", "-y", "30", &command]);
+    let pause = |ms| std::thread::sleep(std::time::Duration::from_millis(ms));
+    pause(1500);
+    tmux(&["send-keys", "-l", &BIP39.join(" ")]);
+    pause(500);
+    // The phrase must be long enough to wrap, or this tests nothing.
+    assert!(BIP39.join(" ").len() > 80);
+    tmux(&["send-keys", "Enter"]);
+    pause(1500);
+    let screen = tmux(&["capture-pane", "-p", "-S", "-200"]).stdout;
+    tmux(&["kill-server"]);
+
+    let screen = String::from_utf8_lossy(&screen);
+    assert!(
+        screen.contains(&format!("**** ({} words entered)", BIP39.len())),
+        "{screen}"
+    );
+    // Single words can appear as autocomplete suggestions for the next word,
+    // so look for what only the typed phrase has: two words in a row.
+    for pair in BIP39.windows(2) {
+        let pair = pair.join(" ");
+        assert!(
+            !screen.contains(&pair),
+            "'{pair}' is still on screen:\n{screen}"
+        );
+    }
+}
