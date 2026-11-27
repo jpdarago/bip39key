@@ -1,3 +1,4 @@
+use crate::cli::OutputFormat;
 use crate::keys::DEFAULT_CREATION_TIMESTAMP;
 use crate::receipt::{PassRole, Receipt};
 use crate::types::*;
@@ -165,6 +166,11 @@ pub struct HtmlReceiptData {
     /// ("encrypt", "AABB...") and ("auth", "CCDD..."). Empty for SSH output
     /// or --just-signkey keys.
     pub subkey_fingerprints: Vec<(String, String)>,
+    /// The public key as text: the armored OpenPGP public key block, or the
+    /// OpenSSH `ssh-ed25519 ...` line. With it the receipt is all that is
+    /// needed to use the key (encrypt to it, authorize it) until the day the
+    /// secret half has to be regenerated.
+    pub public_key: String,
 }
 
 pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
@@ -202,6 +208,13 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
         )
     };
 
+    let public_key_escaped = html_escape(data.public_key.trim_end());
+    let public_key_hint = match receipt.format {
+        OutputFormat::Pgp => "Save this block to a file and run <code>gpg --import</code> on it to encrypt to this key or verify its signatures.",
+        OutputFormat::Ssh => "Add this line to <code>authorized_keys</code> on the machines this key should open.",
+        OutputFormat::Age => "Encrypt to this key with <code>age -r</code> followed by this recipient.",
+    };
+
     let version = env!("CARGO_PKG_VERSION");
     let commit = env!("BIP39KEY_COMMIT");
     let target = env!("BIP39KEY_TARGET");
@@ -233,8 +246,10 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
         Some(expires) => expires.to_string(),
     };
 
-    let key_structure = if receipt.ssh_format {
+    let key_structure = if receipt.format == OutputFormat::Ssh {
         "Ed25519 SSH key".to_string()
+    } else if receipt.format == OutputFormat::Age {
+        "X25519 age identity".to_string()
     } else {
         let mut parts = vec![if receipt.sign_auth {
             "Sign + Certify + Auth primary key"
@@ -250,10 +265,10 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
         parts.join(" + ")
     };
 
-    let fingerprint_label = if receipt.ssh_format {
-        "SSH Key Fingerprint"
-    } else {
-        "PGP Key Fingerprint"
+    let fingerprint_label = match receipt.format {
+        OutputFormat::Pgp => "PGP Key Fingerprint",
+        OutputFormat::Ssh => "SSH Key Fingerprint",
+        OutputFormat::Age => "age Recipient",
     };
 
     let needs_passphrase = matches!(receipt.pass_role, PassRole::WithPass);
@@ -264,20 +279,31 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
     };
     let passphrase_step = if needs_passphrase {
         "<li>Enter your passphrase when prompted.</li>"
+    } else if receipt.format == OutputFormat::Age {
+        // --from-receipt does not ask: an age identity cannot be encrypted,
+        // so a passphrase could only change the key.
+        "<li>You will not be asked for a passphrase: this key was made without one.</li>"
     } else {
         "<li>If asked for a password, it only encrypts the new key file and does not change the key. Leave it empty for an unencrypted file.</li>"
     };
-    let from_receipt_command = if receipt.ssh_format {
-        "bip39key --from-receipt receipt.html -o key.ssh"
-    } else {
-        "bip39key --from-receipt receipt.html -o key.gpg"
+    let from_receipt_command = match receipt.format {
+        OutputFormat::Pgp => "bip39key --from-receipt receipt.html -o key.gpg",
+        OutputFormat::Ssh => "bip39key --from-receipt receipt.html -o key.ssh",
+        OutputFormat::Age => "bip39key --from-receipt receipt.html -o identity.txt",
     };
 
     let recovery_command = html_escape(&receipt.recovery_command());
-    let import_step = if receipt.ssh_format {
-        "<li>Install the key: <code>cp key.ssh ~/.ssh/id_ed25519</code> and set permissions to 0600.</li>"
+    // The manual command cannot pass -n for an age key, so the prompt has to
+    // be left empty by hand.
+    let manual_note = if receipt.format == OutputFormat::Age && !needs_passphrase {
+        " If it asks for a password, leave it empty: any passphrase would produce a different key."
     } else {
-        "<li>Import the key: <code>gpg --import key.gpg</code></li>"
+        ""
+    };
+    let import_step = match receipt.format {
+        OutputFormat::Pgp => "<li>Import the key: <code>gpg --import key.gpg</code></li>",
+        OutputFormat::Ssh => "<li>Install the key: <code>cp key.ssh ~/.ssh/id_ed25519</code> and set permissions to 0600.</li>",
+        OutputFormat::Age => "<li>Decrypt with the identity: <code>age -d -i identity.txt FILE.age</code>. The identity file is not encrypted.</li>",
     };
 
     let build_section = build_instructions(commit);
@@ -341,6 +367,10 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
 </p>
 {subkey_section}
 
+<h2>Public Key</h2>
+<p>{public_key_hint} It is the public half only: it cannot sign or decrypt.</p>
+<pre data-bip39key-public-key="{public_key_escaped}">{public_key_escaped}</pre>
+
 <h2>Derivation Parameters</h2>
 <table>
   <tr><td>Version</td><td>1</td></tr>
@@ -369,7 +399,7 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
 <p>Replace <code>receipt.html</code> with the path to this file. The command reads every setting from it and checks the regenerated key against the fingerprint above, so a mistyped seed phrase or passphrase is reported instead of producing a different key.</p>
 
 <h3>Without this file</h3>
-<p>The same key, from the settings alone. Nothing is verified, so compare the printed fingerprint yourself.</p>
+<p>The same key, from the settings alone. Nothing is verified, so compare the printed fingerprint yourself.{manual_note}</p>
 <pre>{recovery_command}</pre>
 
 <h3>Step-by-step recovery</h3>
@@ -413,6 +443,8 @@ pub struct ParsedHtmlReceipt {
     pub fingerprint: Option<String>,
     /// Labeled subkey fingerprints (name, hex) when the receipt carries them.
     pub subkey_fingerprints: Option<Vec<(String, String)>>,
+    /// The public key text, when the receipt carries it (1.11.0 and later).
+    pub public_key: Option<String>,
 }
 
 /// Whether `content` carries the attribute an HTML receipt stores its receipt
@@ -444,10 +476,12 @@ pub fn parse_html_receipt(html: &str) -> Result<ParsedHtmlReceipt> {
                 .collect::<Result<Vec<_>>>()
         })
         .transpose()?;
+    let public_key = extract_data_attr(html, "data-bip39key-public-key");
     Ok(ParsedHtmlReceipt {
         receipt_string,
         fingerprint,
         subkey_fingerprints,
+        public_key,
     })
 }
 
@@ -475,7 +509,40 @@ mod tests {
     use crate::cli::{KeyAlgorithm, SeedFormat};
     use crate::receipt::Receipt;
 
+    /// Shaped like an armored key: several lines, and characters that must
+    /// survive HTML escaping.
+    const TEST_PUBLIC_KEY: &str =
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion: GnuPG v2\n\nmDME<a&b>\"+/=\n=AbCd\n-----END PGP PUBLIC KEY BLOCK-----";
+
+    #[test]
+    fn test_public_key_round_trips_through_the_page() {
+        let html = generate_html(&HtmlReceiptData {
+            receipt: test_receipt(false),
+            receipt_string: test_receipt(false).encode(),
+            fingerprint_raw: "AB".repeat(20),
+            fingerprint_display: "AB".repeat(20),
+            subkey_fingerprints: vec![],
+            public_key: format!("{TEST_PUBLIC_KEY}\n"),
+        })
+        .unwrap();
+        assert!(html.contains("<h2>Public Key</h2>"));
+        let parsed = parse_html_receipt(&html).unwrap();
+        assert_eq!(parsed.public_key.as_deref(), Some(TEST_PUBLIC_KEY));
+    }
+
+    #[test]
+    fn test_receipt_without_public_key_still_parses() {
+        // Receipts written by 1.10.x have no public key section.
+        let html = r#"<code data-bip39key-receipt="x">x</code>"#;
+        assert!(parse_html_receipt(html).unwrap().public_key.is_none());
+    }
+
     fn test_receipt(ssh: bool) -> Receipt {
+        let format = if ssh {
+            OutputFormat::Ssh
+        } else {
+            OutputFormat::Pgp
+        };
         Receipt {
             seed_format: SeedFormat::Bip39,
             pass_role: PassRole::WithPass,
@@ -484,7 +551,7 @@ mod tests {
             auth_subkey: false,
             sign_auth: false,
             just_signkey: false,
-            ssh_format: ssh,
+            format,
             created: DEFAULT_CREATION_TIMESTAMP,
             expires: None,
             user_id: "Test User <test@example.com>".to_string(),
@@ -506,6 +573,7 @@ mod tests {
             fingerprint_raw: "AABBCCDD".to_string(),
             fingerprint_display: "AABB CCDD".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
         let parsed = parse_html_receipt(&html).unwrap();
@@ -544,6 +612,7 @@ mod tests {
                 ("encrypt".to_string(), "1111".to_string()),
                 ("auth".to_string(), "2222".to_string()),
             ],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
 
@@ -598,6 +667,7 @@ mod tests {
             fingerprint_raw: "AABBCCDD".to_string(),
             fingerprint_display: "AABB CCDD".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
 
@@ -616,6 +686,7 @@ mod tests {
             fingerprint_raw: "SHA256:abcdef".to_string(),
             fingerprint_display: "SHA256:abcdef".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
         assert!(html.contains("SSH Key Fingerprint"));
@@ -636,6 +707,7 @@ mod tests {
             fingerprint_raw: "AABBCCDD".to_string(),
             fingerprint_display: "AABB CCDD".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         })
         .unwrap()
     }

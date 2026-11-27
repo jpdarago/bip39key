@@ -237,6 +237,21 @@ fn format_fingerprint(plan: &Plan, keys: &Keys) -> Result<String> {
     }
 }
 
+/// The public key as the text a receipt carries: the armored OpenPGP block,
+/// the OpenSSH public key line, or the age recipient.
+fn public_key_text(plan: &Plan, keys: &Keys) -> Result<String> {
+    let mut writer = BufWriter::new(Vec::new());
+    match plan.format {
+        OutputFormat::Pgp => pgp::output_public_armored(keys, &mut writer)?,
+        OutputFormat::Ssh => ssh::output_public_as_pem(keys, &mut writer)?,
+        OutputFormat::Age => age::output_public(keys, &mut writer)?,
+    }
+    let bytes = writer
+        .into_inner()
+        .map_err(|err| anyhow::anyhow!("Could not render the public key: {}", err))?;
+    Ok(String::from_utf8(bytes)?.trim_end().to_string())
+}
+
 /// A receipt loaded from disk, plus the fingerprints stored alongside it in
 /// an HTML receipt (absent for a raw receipt string) for post-generation
 /// verification.
@@ -244,6 +259,7 @@ struct LoadedReceipt {
     receipt: receipt::Receipt,
     fingerprint: Option<String>,
     subkey_fingerprints: Option<Vec<(String, String)>>,
+    public_key: Option<String>,
 }
 
 /// Load a receipt file: either a full HTML receipt or a raw receipt string.
@@ -257,6 +273,7 @@ fn load_receipt(path: &str) -> Result<LoadedReceipt> {
             receipt,
             fingerprint: None,
             subkey_fingerprints: None,
+            public_key: None,
         });
     }
     if !html_receipt::looks_like_html_receipt(&content) {
@@ -268,6 +285,7 @@ fn load_receipt(path: &str) -> Result<LoadedReceipt> {
         receipt: receipt::Receipt::parse(&parsed.receipt_string)?,
         fingerprint: parsed.fingerprint,
         subkey_fingerprints: parsed.subkey_fingerprints,
+        public_key: parsed.public_key,
     })
 }
 
@@ -281,9 +299,9 @@ fn verify_against_receipt(plan: &Plan, keys: &Keys, loaded: &LoadedReceipt) -> R
     let actual = match plan.format {
         OutputFormat::Pgp => hex::encode_upper(pgp::key_fingerprint(&keys.sign_key)?),
         OutputFormat::Ssh => format!("SHA256:{}", ssh::key_fingerprint(keys)?),
-        // Receipts are never written for age keys (see plan.rs), so a receipt
-        // cannot ask for one.
-        OutputFormat::Age => bail!("Receipts do not support age output."),
+        // An age key has no fingerprint of its own; the recipient is its
+        // public identity.
+        OutputFormat::Age => age::recipient(keys)?,
     };
     if &actual != expected {
         bail!(
@@ -317,6 +335,18 @@ fn verify_against_receipt(plan: &Plan, keys: &Keys, loaded: &LoadedReceipt) -> R
             );
         }
     }
+    // The fingerprints cover the key material. The public key in the receipt
+    // also carries the user ID and self-signatures, and it is what the owner
+    // has been handing out, so a copy that differs from the regenerated key
+    // means the receipt was damaged or altered.
+    if let Some(expected) = &loaded.public_key {
+        if expected.trim_end() != public_key_text(plan, keys)? {
+            bail!(
+                "The public key in the receipt is not the public key of the regenerated \
+                 key, although the fingerprints match. The receipt is damaged or was altered."
+            );
+        }
+    }
     console_logln!("Fingerprint matches the receipt.");
     Ok(())
 }
@@ -332,7 +362,7 @@ fn write_receipt(plan: &Plan, keys: &Keys, path: &str, has_passphrase: bool) -> 
         auth_subkey: plan.generate_auth_key,
         sign_auth: plan.use_authorization_for_sign_key,
         just_signkey: !plan.generate_encrypt_key,
-        ssh_format: plan.format == OutputFormat::Ssh,
+        format: plan.format.clone(),
         created: plan.creation_timestamp_secs,
         expires: plan.expiration_timestamp_secs,
         user_id: plan.user_id.clone(),
@@ -351,7 +381,10 @@ fn write_receipt(plan: &Plan, keys: &Keys, path: &str, has_passphrase: bool) -> 
             let fp = format!("SHA256:{}", ssh::key_fingerprint(keys)?);
             (fp.clone(), fp, vec![])
         }
-        OutputFormat::Age => bail!("--output-receipt does not support age output yet."),
+        OutputFormat::Age => {
+            let recipient = age::recipient(keys)?;
+            (recipient.clone(), recipient, vec![])
+        }
     };
     let html = html_receipt::generate_html(&html_receipt::HtmlReceiptData {
         receipt: rec,
@@ -359,6 +392,7 @@ fn write_receipt(plan: &Plan, keys: &Keys, path: &str, has_passphrase: bool) -> 
         fingerprint_raw,
         fingerprint_display,
         subkey_fingerprints,
+        public_key: public_key_text(plan, keys)?,
     })?;
     std::fs::write(path, html).with_context(|| format!("Cannot write receipt to {}", path))?;
     console_logln!("Receipt: {}", receipt_string);
@@ -384,6 +418,7 @@ fn main() -> Result<()> {
     };
     let recovery = loaded_receipt.as_ref().map(|loaded| Recovery {
         has_fingerprint: loaded.fingerprint.is_some(),
+        with_pass: loaded.receipt.pass_role == receipt::PassRole::WithPass,
     });
     let plan = plan::plan(&args, env, recovery)?;
     if let Some(loaded) = &loaded_receipt {

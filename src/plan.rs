@@ -33,6 +33,8 @@ pub struct Recovery {
     /// HTML receipts carry the key fingerprint; a raw receipt string does not,
     /// so nothing can check the regenerated key.
     pub has_fingerprint: bool,
+    /// The receipt says a passphrase fed the key (`withpass`).
+    pub with_pass: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -222,15 +224,21 @@ pub fn apply_receipt(args: &mut Args, rec: &Receipt) {
     args.auth_subkey = rec.auth_subkey;
     args.authorization_for_sign_key = rec.sign_auth;
     args.just_signkey = rec.just_signkey;
-    args.format = if rec.ssh_format {
-        OutputFormat::Ssh
-    } else {
-        OutputFormat::Pgp
-    };
-    args.creation_timestamp = Some(rec.created);
+    args.format = rec.format.clone();
     args.timestamp = None;
-    args.expiration_timestamp = rec.expires;
-    args.skip_passphrase_for_key_material = rec.pass_role == PassRole::NoPass;
+    if rec.format == OutputFormat::Age {
+        // An age key has no timestamps, and -n is rejected for age output:
+        // an age identity cannot be encrypted, so a passphrase kept out of
+        // derivation would do nothing. A `nopass` age receipt is handled by
+        // plan(), which takes no passphrase at all.
+        args.creation_timestamp = None;
+        args.expiration_timestamp = None;
+        args.skip_passphrase_for_key_material = false;
+    } else {
+        args.creation_timestamp = Some(rec.created);
+        args.expiration_timestamp = rec.expires;
+        args.skip_passphrase_for_key_material = rec.pass_role == PassRole::NoPass;
+    }
 }
 
 fn creation_timestamp_secs(args: &Args) -> i64 {
@@ -270,11 +278,6 @@ fn validate(args: &Args) -> std::result::Result<(), PlanError> {
         // A receipt with a colon in the user ID cannot be parsed back; fail
         // now rather than after writing an unrecoverable receipt.
         receipt::validate_user_id(user_id).map_err(|err| PlanError(err.to_string()))?;
-        // The receipt format has fields for PGP and SSH only, so it cannot
-        // describe an age key yet.
-        if args.format == OutputFormat::Age {
-            bail!("--output-receipt does not support age output yet.");
-        }
     }
     if args.creation_timestamp.is_some() && args.timestamp.is_some() {
         bail!("--timestamp (-t) flag is deprecated, use --creation-timestamp");
@@ -404,7 +407,28 @@ pub fn plan(
         None => SeedSource::Stdin,
     };
 
-    let passphrase_source = if args.pinentry {
+    // An age key regenerated from a `nopass` receipt takes no passphrase at
+    // all. There is no key file encryption for it to be used for instead, so
+    // any passphrase would feed derivation and produce a different key.
+    let passphrase_forbidden =
+        recovery.is_some_and(|r| !r.with_pass) && args.format == OutputFormat::Age;
+    if passphrase_forbidden && (args.pinentry || args.passphrase.is_some()) {
+        bail!(
+            "The receipt records that this age key was made without a passphrase, \
+             so -p/--passphrase and -e/--pinentry would produce a different key."
+        );
+    }
+    // For PGP and SSH, apply_receipt turned a `nopass` receipt into -n.
+    if let Some(recovery) = recovery {
+        if args.format != OutputFormat::Age
+            && recovery.with_pass == args.skip_passphrase_for_key_material
+        {
+            bail!("internal error: receipt passphrase role does not match -n");
+        }
+    }
+    let passphrase_source = if passphrase_forbidden {
+        PassphraseSource::None
+    } else if args.pinentry {
         PassphraseSource::Pinentry
     } else if let Some(passphrase) = &args.passphrase {
         PassphraseSource::Flag(passphrase.clone())
@@ -426,10 +450,7 @@ pub fn plan(
     let passphrase_is_verified =
         recovery.is_some_and(|r| r.has_fingerprint) && passphrase_in_derivation;
     let confirm_passphrase = !passphrase_is_verified;
-    // A receipt is `nopass` when -n was used or no passphrase was entered, and
-    // apply_receipt turns that into -n. So in recovery, a passphrase in
-    // derivation means the receipt said `withpass`.
-    let passphrase_required = recovery.is_some() && passphrase_in_derivation;
+    let passphrase_required = recovery.is_some_and(|r| r.with_pass);
 
     let algorithm = if args.use_concatenation {
         KeyAlgorithm::Concat
@@ -549,20 +570,26 @@ mod tests {
 
     const FLAG_BITS: u32 = 17;
 
-    const RECOVERIES: [Option<Recovery>; 3] = [
+    const fn recovery(has_fingerprint: bool, with_pass: bool) -> Option<Recovery> {
+        Some(Recovery {
+            has_fingerprint,
+            with_pass,
+        })
+    }
+
+    const RECOVERIES: [Option<Recovery>; 5] = [
         None,
-        Some(Recovery {
-            has_fingerprint: true,
-        }),
-        Some(Recovery {
-            has_fingerprint: false,
-        }),
+        recovery(true, true),
+        recovery(true, false),
+        recovery(false, true),
+        recovery(false, false),
     ];
 
     /// Every combination of the flags that decide anything, with fixed
     /// stand-ins for the values that are only carried through. Calls `check`
-    /// 3 * 3 * 2^17 * 3 times: with no receipt, and regenerating from one with
-    /// and without a fingerprint.
+    /// about 3 * 3 * 2^17 * 3 times: with no receipt, and regenerating from one
+    /// with and without a fingerprint. For PGP and SSH the receipt's passphrase
+    /// role is whatever -n says, as apply_receipt arranges; for age, both.
     fn for_each_invocation(mut check: impl FnMut(&Args, Env, Option<Recovery>)) {
         for format in &FORMATS {
             for algorithm in &ALGORITHMS {
@@ -591,6 +618,12 @@ mod tests {
                         stdout_is_terminal: bits.next(),
                     };
                     for recovery in RECOVERIES {
+                        if recovery.is_some_and(|r| {
+                            args.format != OutputFormat::Age
+                                && r.with_pass == args.skip_passphrase_for_key_material
+                        }) {
+                            continue;
+                        }
                         args.from_receipt = recovery.map(|_| "old-receipt.html".to_string());
                         check(&args, env, recovery);
                     }
@@ -782,11 +815,33 @@ mod tests {
     }
 
     #[test]
-    fn receipts_are_never_written_for_age_keys() {
+    fn a_receipt_is_written_exactly_when_asked_for() {
+        let mut formats_with_receipts = std::collections::HashSet::new();
         for_each_plan(|args, _env, plan| {
             assert_eq!(plan.receipt_output, args.output_receipt, "{args:?}");
             if plan.receipt_output.is_some() {
-                assert_ne!(plan.format, OutputFormat::Age, "{args:?}");
+                formats_with_receipts.insert(format!("{:?}", plan.format));
+            }
+        });
+        // Every output format can have one.
+        assert_eq!(formats_with_receipts.len(), FORMATS.len());
+    }
+
+    #[test]
+    fn an_age_key_made_without_a_passphrase_is_regenerated_without_one() {
+        // An age identity cannot be encrypted, so in recovery any passphrase
+        // would feed derivation and change the key.
+        for_each_invocation(|args, env, recovery| {
+            let Some(recovery) = recovery else { return };
+            if args.format != OutputFormat::Age || recovery.with_pass {
+                return;
+            }
+            if let Ok(plan) = plan(args, env, Some(recovery)) {
+                assert_eq!(plan.passphrase_source, PassphraseSource::None, "{args:?}");
+                assert!(!plan.passphrase_required);
+            }
+            if args.passphrase.is_some() || args.pinentry {
+                assert!(plan(args, env, Some(recovery)).is_err(), "{args:?}");
             }
         });
     }
@@ -800,10 +855,10 @@ mod tests {
                 return;
             };
             // withpass receipt: the passphrase is part of the key.
-            assert_eq!(
-                plan.passphrase_required, plan.passphrase_in_derivation,
-                "{args:?}"
-            );
+            assert_eq!(plan.passphrase_required, recovery.with_pass, "{args:?}");
+            if recovery.with_pass {
+                assert!(plan.passphrase_in_derivation, "{args:?}");
+            }
             // Only a fingerprint check on a passphrase that feeds the key
             // makes the second prompt redundant.
             assert_eq!(
@@ -835,7 +890,7 @@ mod tests {
         // same derivation. This is what makes --from-receipt regenerate the
         // same key.
         for_each_plan(|args, env, original| {
-            if original.recovery.is_some() || original.format == OutputFormat::Age {
+            if original.recovery.is_some() {
                 return;
             }
             for has_passphrase in [false, true] {
@@ -847,7 +902,7 @@ mod tests {
                     auth_subkey: original.generate_auth_key,
                     sign_auth: original.use_authorization_for_sign_key,
                     just_signkey: !original.generate_encrypt_key,
-                    ssh_format: original.format == OutputFormat::Ssh,
+                    format: original.format.clone(),
                     created: original.creation_timestamp_secs,
                     expires: original.expiration_timestamp_secs,
                     user_id: original.user_id.clone(),
@@ -856,9 +911,7 @@ mod tests {
                 recovered_args.from_receipt = Some("old-receipt.html".to_string());
                 recovered_args.passphrase = has_passphrase.then(|| "hunter2".to_string());
                 apply_receipt(&mut recovered_args, &rec);
-                let recovery = Some(Recovery {
-                    has_fingerprint: true,
-                });
+                let recovery = recovery(true, rec.pass_role == PassRole::WithPass);
                 let recovered = plan(&recovered_args, env, recovery)
                     .unwrap_or_else(|err| panic!("{args:?}: receipt rejected: {err}"));
 
@@ -888,9 +941,7 @@ mod tests {
             stdin_is_terminal: false,
             stdout_is_terminal: false,
         };
-        let recovery = Some(Recovery {
-            has_fingerprint: true,
-        });
+        let recovery = recovery(true, true);
         let same = || Some("same".to_string());
 
         let mut args = base_args();
@@ -1001,7 +1052,10 @@ mod tests {
         ) {
             let env = Env { stdin_is_terminal, stdout_is_terminal };
             // Must not panic, whatever the values.
-            let recovery = args.from_receipt.as_ref().map(|_| Recovery { has_fingerprint });
+            let recovery = args.from_receipt.as_ref().map(|_| Recovery {
+                has_fingerprint,
+                with_pass: !args.skip_passphrase_for_key_material,
+            });
             let Ok(plan) = plan(&args, env, recovery) else { return Ok(()) };
 
             prop_assert_eq!(Some(&plan.user_id), args.user_id.as_ref());

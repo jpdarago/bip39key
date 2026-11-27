@@ -1,4 +1,4 @@
-use crate::cli::{KeyAlgorithm, SeedFormat};
+use crate::cli::{KeyAlgorithm, OutputFormat, SeedFormat};
 use crate::keys::DEFAULT_CREATION_TIMESTAMP;
 use crate::types::*;
 use sha2::Digest;
@@ -96,8 +96,9 @@ pub struct Receipt {
     pub sign_auth: bool,
     /// No encrypt subkey was generated (`-j/--just-signkey`).
     pub just_signkey: bool,
-    /// The key was emitted in SSH format (`-f ssh`); default is PGP.
-    pub ssh_format: bool,
+    /// What was emitted: OpenPGP (the default, not written to the receipt
+    /// string), OpenSSH (`format=ssh`) or age (`format=age`).
+    pub format: OutputFormat,
     pub created: i64,
     /// Absolute expiration timestamp; `None` means the key never expires.
     pub expires: Option<i64>,
@@ -137,8 +138,10 @@ impl Receipt {
         if self.just_signkey {
             parts.push("nosubkey=1".to_string());
         }
-        if self.ssh_format {
-            parts.push("format=ssh".to_string());
+        match self.format {
+            OutputFormat::Pgp => {}
+            OutputFormat::Ssh => parts.push("format=ssh".to_string()),
+            OutputFormat::Age => parts.push("format=age".to_string()),
         }
         if self.created != DEFAULT_CREATION_TIMESTAMP {
             parts.push(format!("created={}", self.created));
@@ -233,7 +236,7 @@ impl Receipt {
         let mut auth_subkey = false;
         let mut sign_auth = false;
         let mut just_signkey = false;
-        let mut ssh_format = false;
+        let mut format = OutputFormat::Pgp;
         let mut created = DEFAULT_CREATION_TIMESTAMP;
         let mut expires = None;
 
@@ -250,7 +253,8 @@ impl Receipt {
                 "signauth" => sign_auth = parse_flag(key, value)?,
                 "nosubkey" => just_signkey = parse_flag(key, value)?,
                 "format" => match value {
-                    "ssh" => ssh_format = true,
+                    "ssh" => format = OutputFormat::Ssh,
+                    "age" => format = OutputFormat::Age,
                     other => anyhow::bail!("Unknown format value in receipt: '{}'", other),
                 },
                 "created" => {
@@ -269,8 +273,25 @@ impl Receipt {
             }
         }
 
-        if !ssh_format {
+        if format == OutputFormat::Pgp {
             crate::pgp::validate_timestamps(created, expires)?;
+        }
+        if format == OutputFormat::Age {
+            // The age key exists only under hkdf, and an age identity has no
+            // subkeys, capabilities or timestamps for a receipt to record.
+            if algorithm != KeyAlgorithm::Hkdf {
+                anyhow::bail!("Invalid receipt: format=age requires the hkdf algorithm");
+            }
+            if auth_subkey
+                || sign_auth
+                || just_signkey
+                || created != DEFAULT_CREATION_TIMESTAMP
+                || expires.is_some()
+            {
+                anyhow::bail!(
+                    "Invalid receipt: format=age cannot be combined with subkey or timestamp options"
+                );
+            }
         }
 
         if auth_subkey && algorithm != KeyAlgorithm::Hkdf {
@@ -285,7 +306,7 @@ impl Receipt {
             auth_subkey,
             sign_auth,
             just_signkey,
-            ssh_format,
+            format,
             created,
             expires,
             user_id,
@@ -336,9 +357,12 @@ impl Receipt {
         if self.rfc9106 {
             cmd.push_str(" -r");
         }
-        if self.pass_role == PassRole::NoPass {
+        if self.pass_role == PassRole::NoPass && self.format != OutputFormat::Age {
             // Without -n, a passphrase typed at the prompt would be mixed
-            // into the derivation and produce a different key.
+            // into the derivation and produce a different key. age output
+            // rejects -n (an age identity cannot be encrypted, so the
+            // passphrase would do nothing); there the prompt must be left
+            // empty, which the receipt page says.
             cmd.push_str(" -n");
         }
         if self.auth_subkey {
@@ -356,10 +380,10 @@ impl Receipt {
         if let Some(expires) = self.expires {
             cmd.push_str(&format!(" -y {}", expires));
         }
-        if self.ssh_format {
-            cmd.push_str(" -f ssh -o key.ssh");
-        } else {
-            cmd.push_str(" -o key.gpg");
+        match self.format {
+            OutputFormat::Pgp => cmd.push_str(" -o key.gpg"),
+            OutputFormat::Ssh => cmd.push_str(" -f ssh -o key.ssh"),
+            OutputFormat::Age => cmd.push_str(" -f age -o identity.txt"),
         }
         cmd
     }
@@ -380,7 +404,11 @@ impl Receipt {
         lines.push(format!("Algorithm:    {}", self.algorithm_display()));
         lines.push(format!(
             "Format:       {}",
-            if self.ssh_format { "SSH" } else { "PGP" }
+            match self.format {
+                OutputFormat::Pgp => "PGP",
+                OutputFormat::Ssh => "SSH",
+                OutputFormat::Age => "age",
+            }
         ));
         if self.auth_subkey {
             lines.push("Auth subkey:  yes".to_string());
@@ -427,7 +455,7 @@ mod tests {
             auth_subkey: false,
             sign_auth: false,
             just_signkey: false,
-            ssh_format: false,
+            format: OutputFormat::Pgp,
             created: DEFAULT_CREATION_TIMESTAMP,
             expires: None,
             user_id: "Satoshi Nakamoto <satoshin@gmx.com>".to_string(),
@@ -475,7 +503,7 @@ mod tests {
             auth_subkey: true,
             sign_auth: true,
             just_signkey: false,
-            ssh_format: false,
+            format: OutputFormat::Pgp,
             created: 1744948062,
             expires: Some(1745554397),
             user_id: "Alice Smith <alice@company.com>".to_string(),
@@ -490,10 +518,64 @@ mod tests {
     }
 
     #[test]
+    fn test_roundtrip_age() {
+        let original = Receipt {
+            format: OutputFormat::Age,
+            rfc9106: true,
+            ..basic_receipt()
+        };
+        let encoded = original.encode();
+        assert!(encoded.contains(":argon=rfc9106:format=age:"), "{encoded}");
+        assert_eq!(Receipt::parse(&encoded).unwrap(), original);
+        assert!(original
+            .recovery_command()
+            .contains("-f age -o identity.txt"));
+        // -n is rejected with age output, so the manual command never has it.
+        let nopass = Receipt {
+            pass_role: PassRole::NoPass,
+            ..original
+        };
+        assert!(!nopass.recovery_command().contains(" -n"));
+    }
+
+    #[test]
+    fn test_age_receipt_rejects_what_age_keys_cannot_have() {
+        for bad in [
+            Receipt {
+                algorithm: KeyAlgorithm::Xor,
+                ..basic_receipt()
+            },
+            Receipt {
+                auth_subkey: true,
+                ..basic_receipt()
+            },
+            Receipt {
+                just_signkey: true,
+                ..basic_receipt()
+            },
+            Receipt {
+                created: 1_600_000_000,
+                ..basic_receipt()
+            },
+            Receipt {
+                expires: Some(1_900_000_000),
+                ..basic_receipt()
+            },
+        ] {
+            let encoded = Receipt {
+                format: OutputFormat::Age,
+                ..bad
+            }
+            .encode();
+            assert!(Receipt::parse(&encoded).is_err(), "{encoded}");
+        }
+    }
+
+    #[test]
     fn test_roundtrip_ssh() {
         let original = Receipt {
             algorithm: KeyAlgorithm::Concat,
-            ssh_format: true,
+            format: OutputFormat::Ssh,
             user_id: "Test <t@t.com>".to_string(),
             ..basic_receipt()
         };
