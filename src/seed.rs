@@ -169,6 +169,17 @@ where
     Ok(words)
 }
 
+/// What replaces a submitted line of seed words on screen, so they are not
+/// readable in terminal scrollback or screen captures.
+fn mask_answer(answer: &str) -> String {
+    match answer.split_whitespace().count() {
+        0 => String::new(),
+        1 => "****".to_string(),
+        // Several words were typed or pasted on one line.
+        entered => format!("**** ({} words entered)", entered),
+    }
+}
+
 pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
     console_logln!("Please input a seed phrase in {} format.", seed_format);
     console_logln!(
@@ -181,20 +192,13 @@ pub fn from_prompt(seed_format: &SeedFormat) -> Result<Vec<u8>> {
             let input = Text::new(&format!("Word (currently {}): ", word_number))
                 .with_validator(validate)
                 .with_autocomplete(suggest)
+                // What stays on screen once the line is submitted. inquire
+                // redraws the whole prompt with this in place of the answer,
+                // however many terminal rows the answer took. Clearing the
+                // line by hand afterwards only reached the last row, so a
+                // pasted phrase that wrapped stayed readable above the mask.
+                .with_formatter(&mask_answer)
                 .prompt()?;
-            let entered = input.split_whitespace().count();
-            if entered > 0 {
-                // Overwrite the answered prompt line so previously entered words
-                // are not readable in terminal scrollback or screen captures.
-                // Move cursor up one line, clear it, and print a masked replacement.
-                print!("\x1b[1A\x1b[2KWord {}: ****", word_number);
-                if entered > 1 {
-                    // Multiple words were pasted at once.
-                    print!(" ({} words entered)", entered);
-                }
-                println!();
-                io::stdout().flush()?;
-            }
             Ok(input)
         })?;
         match decode_phrase(seed_format, &words.join(" ")) {
@@ -225,6 +229,17 @@ mod tests {
     // so anything collect_words is meant to accept must also pass validation.
     // Previously an empty line (the only way to finish a seed shorter than 24
     // words) and a pasted multi-word line were both rejected here.
+
+    #[test]
+    fn test_mask_answer_never_shows_a_word() {
+        assert_eq!(mask_answer(""), "");
+        assert_eq!(mask_answer("  "), "");
+        assert_eq!(mask_answer("abandon"), "****");
+        assert_eq!(mask_answer(GOLDEN_24), "**** (24 words entered)");
+        for word in GOLDEN_24.split_whitespace() {
+            assert!(!mask_answer(GOLDEN_24).contains(word));
+        }
+    }
 
     #[test]
     fn test_validate_accepts_empty_line() {
