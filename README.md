@@ -227,6 +227,15 @@ cannot verify the result; compare the printed fingerprint yourself. User IDs
 must not contain `:` when a receipt is written, since the receipt string is
 colon-separated.
 
+The receipt includes the public key: the armored OpenPGP public key block, or
+the `ssh-ed25519` line for an OpenSSH key. It is the same text `-k` prints.
+This makes the receipt enough on its own for a key you keep only as a
+last-resort backup: import the public key from the receipt to encrypt to it or
+authorize it today, delete the secret key file, and regenerate the secret half
+from the mnemonic only when you need it. During recovery the public key in the
+receipt is compared with the regenerated one. Receipts written by 1.10.x have
+no public key and still work.
+
 The receipt also prints a manual command that regenerates the key without the
 receipt file; it verifies nothing, so prefer `--from-receipt`. A receipt string
 too long for a QR code (a very long user ID) is written without one. For a key

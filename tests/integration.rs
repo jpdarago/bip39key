@@ -2273,3 +2273,97 @@ fn test_receipt_without_subkey_fingerprints_is_rejected() {
     assert!(stderr.contains("carries no fingerprint"), "{stderr}");
     assert_eq!(fs::read(&key).unwrap(), fs::read(&out).unwrap());
 }
+
+/// The public key text an HTML receipt carries.
+fn public_key_from_html(html: &str) -> String {
+    let attr = "data-bip39key-public-key=\"";
+    let start = html.find(attr).unwrap() + attr.len();
+    let end = html[start..].find('"').unwrap();
+    html[start..start + end]
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&amp;", "&")
+}
+
+#[test]
+fn test_receipt_carries_the_public_key() {
+    // The receipt's public key is exactly what -k prints, for PGP and SSH, so
+    // the receipt alone is enough to use the key until it must be regenerated.
+    for format_flags in [vec!["-a"], vec!["-f", "ssh"]] {
+        let tmp = TempDir::new().unwrap();
+        let receipt = tmp.path().join("receipt.html");
+        let key = tmp.path().join("key");
+        let mut flags = vec!["-g", "hkdf", "-r", "-p", PASS];
+        flags.extend(&format_flags);
+        let mut generate = flags.clone();
+        generate.extend([
+            "-o",
+            key.to_str().unwrap(),
+            "--output-receipt",
+            receipt.to_str().unwrap(),
+        ]);
+        run_bip39key(BIP39, &userid(), &generate).unwrap();
+        let mut public = flags.clone();
+        public.push("-k");
+        let expected = run_bip39key(BIP39, &userid(), &public).unwrap().stdout;
+
+        let html = fs::read_to_string(&receipt).unwrap();
+        assert_eq!(
+            public_key_from_html(&html),
+            String::from_utf8(expected).unwrap().trim_end(),
+            "{format_flags:?}"
+        );
+        // Public half only.
+        assert!(!html.contains("PRIVATE KEY"), "{format_flags:?}");
+    }
+}
+
+#[test]
+fn test_receipt_with_altered_public_key_is_rejected() {
+    // Same fingerprints, different public key text: the receipt was damaged
+    // or altered, and recovery must say so rather than report a match.
+    let tmp = TempDir::new().unwrap();
+    let receipt = tmp.path().join("receipt.html");
+    let key = tmp.path().join("key.gpg");
+    let made = run_bip39key_raw(
+        BIP39,
+        &[
+            "-u",
+            "Alice <alice@example.com>",
+            "-g",
+            "hkdf",
+            "-r",
+            "-o",
+            key.to_str().unwrap(),
+            "--output-receipt",
+            receipt.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(made.status.success());
+    let html = fs::read_to_string(&receipt).unwrap();
+    let altered = html.replacen(
+        "data-bip39key-public-key=\"-----BEGIN PGP PUBLIC KEY BLOCK-----",
+        "data-bip39key-public-key=\"-----BEGIN PGP PUBLIC KEY BLOCK-----\nComment: altered",
+        1,
+    );
+    assert_ne!(html, altered);
+    fs::write(&receipt, altered).unwrap();
+
+    let out = tmp.path().join("out.gpg");
+    let regen = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            receipt.to_str().unwrap(),
+            "-o",
+            out.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(!regen.status.success());
+    let stderr = String::from_utf8_lossy(&regen.stderr);
+    assert!(stderr.contains("public key in the receipt"), "{stderr}");
+    assert!(!out.exists());
+}

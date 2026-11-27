@@ -165,6 +165,11 @@ pub struct HtmlReceiptData {
     /// ("encrypt", "AABB...") and ("auth", "CCDD..."). Empty for SSH output
     /// or --just-signkey keys.
     pub subkey_fingerprints: Vec<(String, String)>,
+    /// The public key as text: the armored OpenPGP public key block, or the
+    /// OpenSSH `ssh-ed25519 ...` line. With it the receipt is all that is
+    /// needed to use the key (encrypt to it, authorize it) until the day the
+    /// secret half has to be regenerated.
+    pub public_key: String,
 }
 
 pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
@@ -200,6 +205,13 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
 <p class="fp" data-bip39key-subkey-fingerprints="{subkey_fps_attr}">{subkey_fps_display}</p>
 <p>Compare them with <code>gpg --list-keys --with-subkey-fingerprint</code> after import.</p>"#
         )
+    };
+
+    let public_key_escaped = html_escape(data.public_key.trim_end());
+    let public_key_hint = if receipt.ssh_format {
+        "Add this line to <code>authorized_keys</code> on the machines this key should open."
+    } else {
+        "Save this block to a file and run <code>gpg --import</code> on it to encrypt to this key or verify its signatures."
     };
 
     let version = env!("CARGO_PKG_VERSION");
@@ -341,6 +353,10 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
 </p>
 {subkey_section}
 
+<h2>Public Key</h2>
+<p>{public_key_hint} It is the public half only: it cannot sign or decrypt.</p>
+<pre data-bip39key-public-key="{public_key_escaped}">{public_key_escaped}</pre>
+
 <h2>Derivation Parameters</h2>
 <table>
   <tr><td>Version</td><td>1</td></tr>
@@ -413,6 +429,8 @@ pub struct ParsedHtmlReceipt {
     pub fingerprint: Option<String>,
     /// Labeled subkey fingerprints (name, hex) when the receipt carries them.
     pub subkey_fingerprints: Option<Vec<(String, String)>>,
+    /// The public key text, when the receipt carries it (1.11.0 and later).
+    pub public_key: Option<String>,
 }
 
 /// Whether `content` carries the attribute an HTML receipt stores its receipt
@@ -444,10 +462,12 @@ pub fn parse_html_receipt(html: &str) -> Result<ParsedHtmlReceipt> {
                 .collect::<Result<Vec<_>>>()
         })
         .transpose()?;
+    let public_key = extract_data_attr(html, "data-bip39key-public-key");
     Ok(ParsedHtmlReceipt {
         receipt_string,
         fingerprint,
         subkey_fingerprints,
+        public_key,
     })
 }
 
@@ -474,6 +494,34 @@ mod tests {
     use super::*;
     use crate::cli::{KeyAlgorithm, SeedFormat};
     use crate::receipt::Receipt;
+
+    /// Shaped like an armored key: several lines, and characters that must
+    /// survive HTML escaping.
+    const TEST_PUBLIC_KEY: &str =
+        "-----BEGIN PGP PUBLIC KEY BLOCK-----\nVersion: GnuPG v2\n\nmDME<a&b>\"+/=\n=AbCd\n-----END PGP PUBLIC KEY BLOCK-----";
+
+    #[test]
+    fn test_public_key_round_trips_through_the_page() {
+        let html = generate_html(&HtmlReceiptData {
+            receipt: test_receipt(false),
+            receipt_string: test_receipt(false).encode(),
+            fingerprint_raw: "AB".repeat(20),
+            fingerprint_display: "AB".repeat(20),
+            subkey_fingerprints: vec![],
+            public_key: format!("{TEST_PUBLIC_KEY}\n"),
+        })
+        .unwrap();
+        assert!(html.contains("<h2>Public Key</h2>"));
+        let parsed = parse_html_receipt(&html).unwrap();
+        assert_eq!(parsed.public_key.as_deref(), Some(TEST_PUBLIC_KEY));
+    }
+
+    #[test]
+    fn test_receipt_without_public_key_still_parses() {
+        // Receipts written by 1.10.x have no public key section.
+        let html = r#"<code data-bip39key-receipt="x">x</code>"#;
+        assert!(parse_html_receipt(html).unwrap().public_key.is_none());
+    }
 
     fn test_receipt(ssh: bool) -> Receipt {
         Receipt {
@@ -506,6 +554,7 @@ mod tests {
             fingerprint_raw: "AABBCCDD".to_string(),
             fingerprint_display: "AABB CCDD".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
         let parsed = parse_html_receipt(&html).unwrap();
@@ -544,6 +593,7 @@ mod tests {
                 ("encrypt".to_string(), "1111".to_string()),
                 ("auth".to_string(), "2222".to_string()),
             ],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
 
@@ -598,6 +648,7 @@ mod tests {
             fingerprint_raw: "AABBCCDD".to_string(),
             fingerprint_display: "AABB CCDD".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
 
@@ -616,6 +667,7 @@ mod tests {
             fingerprint_raw: "SHA256:abcdef".to_string(),
             fingerprint_display: "SHA256:abcdef".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         };
         let html = generate_html(&data).unwrap();
         assert!(html.contains("SSH Key Fingerprint"));
@@ -636,6 +688,7 @@ mod tests {
             fingerprint_raw: "AABBCCDD".to_string(),
             fingerprint_display: "AABB CCDD".to_string(),
             subkey_fingerprints: vec![],
+            public_key: TEST_PUBLIC_KEY.to_string(),
         })
         .unwrap()
     }
