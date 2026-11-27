@@ -233,6 +233,9 @@ pub fn apply_receipt(args: &mut Args, rec: &Receipt) {
     args.skip_passphrase_for_key_material = rec.pass_role == PassRole::NoPass;
 }
 
+/// Argon2's minimum salt length. The user ID is the salt.
+pub const MIN_USER_ID_BYTES: usize = 8;
+
 fn creation_timestamp_secs(args: &Args) -> i64 {
     args.creation_timestamp
         .or(args.timestamp)
@@ -266,6 +269,18 @@ fn validate(args: &Args) -> std::result::Result<(), PlanError> {
     let Some(user_id) = &args.user_id else {
         bail!("--user-id is required (or use --from-receipt)");
     };
+    // The user ID is the Argon2id salt, and Argon2 refuses a salt under 8
+    // bytes. Left to the derivation, that surfaced as "Salt is too short"
+    // after the seed phrase had already been typed.
+    if user_id.len() < MIN_USER_ID_BYTES {
+        bail!(
+            "--user-id must be at least {} bytes long, it is {}: '{}'. \
+             The user ID is the salt for key derivation.",
+            MIN_USER_ID_BYTES,
+            user_id.len(),
+            user_id
+        );
+    }
     if args.output_receipt.is_some() {
         // A receipt with a colon in the user ID cannot be parsed back; fail
         // now rather than after writing an unrecoverable receipt.
@@ -915,6 +930,29 @@ mod tests {
     }
 
     #[test]
+    fn user_id_too_short_to_be_a_salt_is_rejected() {
+        let env = Env {
+            stdin_is_terminal: false,
+            stdout_is_terminal: false,
+        };
+        // Bytes, not characters: "ñandúes" is 7 characters and 9 bytes.
+        for (user_id, accepted) in [
+            ("", false),
+            ("a@b.com", false),
+            ("ab@c.com", true),
+            ("ñandúes", true),
+        ] {
+            let mut args = base_args();
+            args.user_id = Some(user_id.to_string());
+            let result = plan(&args, env, None);
+            assert_eq!(result.is_ok(), accepted, "{user_id:?}");
+            if let Err(err) = result {
+                assert!(err.to_string().contains("at least 8 bytes"), "{err}");
+            }
+        }
+    }
+
+    #[test]
     fn output_onto_the_seed_file_is_rejected() {
         let mut args = base_args();
         args.input_filename = Some("seed.txt".to_string());
@@ -1005,6 +1043,8 @@ mod tests {
             let Ok(plan) = plan(&args, env, recovery) else { return Ok(()) };
 
             prop_assert_eq!(Some(&plan.user_id), args.user_id.as_ref());
+            // Long enough to be an Argon2id salt.
+            prop_assert!(plan.user_id.len() >= MIN_USER_ID_BYTES);
             prop_assert_eq!(&plan.seed_format, &args.seed_format);
             prop_assert_eq!(plan.use_rfc9106_settings, args.use_rfc9106_settings);
             prop_assert_eq!(plan.generate_encrypt_key, !args.just_signkey);

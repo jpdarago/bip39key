@@ -367,9 +367,10 @@ fn write_receipt(plan: &Plan, keys: &Keys, path: &str, has_passphrase: bool) -> 
 }
 
 fn main() -> Result<()> {
-    console_logln!("Welcome to BIP39Key");
-
+    // Parse first: --version, --help and usage errors exit inside parse(),
+    // and should not be preceded by a greeting.
     let mut args = Args::parse();
+    console_logln!("Welcome to BIP39Key");
     let loaded_receipt = match args.from_receipt.clone() {
         Some(path) => {
             let loaded = load_receipt(&path)?;

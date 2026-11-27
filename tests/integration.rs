@@ -1570,7 +1570,14 @@ fn test_output_onto_seed_file_is_rejected() {
     let respelled = dir.path().join(".").join("seed.txt");
 
     for output in [seed.as_str(), respelled.to_str().unwrap()] {
-        let args = ["-u", "A <a@b>", "-i", seed.as_str(), "-o", output];
+        let args = [
+            "-u",
+            "Alice <alice@example.com>",
+            "-i",
+            seed.as_str(),
+            "-o",
+            output,
+        ];
         let result = cmd(env!("CARGO_BIN_EXE_bip39key"), args)
             .stdin_null()
             .stdout_capture()
@@ -2160,7 +2167,7 @@ fn test_receipt_and_key_spelled_differently_are_the_same_file() {
         BIP39,
         &[
             "-u",
-            "A <a@b>",
+            "Alice <alice@example.com>",
             "-g",
             "hkdf",
             "-o",
@@ -2326,4 +2333,39 @@ fn test_seed_prompt_masks_a_wrapped_line() {
             "'{pair}' is still on screen:\n{screen}"
         );
     }
+}
+
+#[test]
+fn test_short_user_id_is_rejected_before_the_seed_is_read() {
+    // The user ID is the Argon2id salt, which must be at least 8 bytes. This
+    // used to fail with "Salt is too short" after the seed had been entered.
+    // An invalid seed on stdin shows the check comes first.
+    let output = run_bip39key_raw(&["not", "a", "seed"], &["-u", "a@b.com", "-g", "hkdf"]).unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("at least 8 bytes"), "{stderr}");
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn test_version_on_a_terminal_has_no_banner() {
+    // The greeting used to be printed before the arguments were parsed, so
+    // --version and --help on a terminal started with "Welcome to BIP39Key".
+    if cmd("script", ["--version"]).stdout_null().run().is_err() {
+        eprintln!("skipping: script(1) not found");
+        return;
+    }
+    let command = format!("'{}' --version", env!("CARGO_BIN_EXE_bip39key"));
+    let output = cmd("script", ["-qec", &command, "/dev/null"])
+        .stdin_null()
+        .stdout_capture()
+        .unchecked()
+        .run()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.trim(),
+        format!("bip39key {}", env!("CARGO_PKG_VERSION")),
+        "{stdout}"
+    );
 }
