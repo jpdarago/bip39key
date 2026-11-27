@@ -237,14 +237,14 @@ fn format_fingerprint(plan: &Plan, keys: &Keys) -> Result<String> {
     }
 }
 
-/// The public key as the text a receipt carries: the armored OpenPGP block or
-/// the OpenSSH public key line.
+/// The public key as the text a receipt carries: the armored OpenPGP block,
+/// the OpenSSH public key line, or the age recipient.
 fn public_key_text(plan: &Plan, keys: &Keys) -> Result<String> {
     let mut writer = BufWriter::new(Vec::new());
     match plan.format {
         OutputFormat::Pgp => pgp::output_public_armored(keys, &mut writer)?,
         OutputFormat::Ssh => ssh::output_public_as_pem(keys, &mut writer)?,
-        OutputFormat::Age => bail!("Receipts do not support age output."),
+        OutputFormat::Age => age::output_public(keys, &mut writer)?,
     }
     let bytes = writer
         .into_inner()
@@ -299,9 +299,9 @@ fn verify_against_receipt(plan: &Plan, keys: &Keys, loaded: &LoadedReceipt) -> R
     let actual = match plan.format {
         OutputFormat::Pgp => hex::encode_upper(pgp::key_fingerprint(&keys.sign_key)?),
         OutputFormat::Ssh => format!("SHA256:{}", ssh::key_fingerprint(keys)?),
-        // Receipts are never written for age keys (see plan.rs), so a receipt
-        // cannot ask for one.
-        OutputFormat::Age => bail!("Receipts do not support age output."),
+        // An age key has no fingerprint of its own; the recipient is its
+        // public identity.
+        OutputFormat::Age => age::recipient(keys)?,
     };
     if &actual != expected {
         bail!(
@@ -362,7 +362,7 @@ fn write_receipt(plan: &Plan, keys: &Keys, path: &str, has_passphrase: bool) -> 
         auth_subkey: plan.generate_auth_key,
         sign_auth: plan.use_authorization_for_sign_key,
         just_signkey: !plan.generate_encrypt_key,
-        ssh_format: plan.format == OutputFormat::Ssh,
+        format: plan.format.clone(),
         created: plan.creation_timestamp_secs,
         expires: plan.expiration_timestamp_secs,
         user_id: plan.user_id.clone(),
@@ -381,7 +381,10 @@ fn write_receipt(plan: &Plan, keys: &Keys, path: &str, has_passphrase: bool) -> 
             let fp = format!("SHA256:{}", ssh::key_fingerprint(keys)?);
             (fp.clone(), fp, vec![])
         }
-        OutputFormat::Age => bail!("--output-receipt does not support age output yet."),
+        OutputFormat::Age => {
+            let recipient = age::recipient(keys)?;
+            (recipient.clone(), recipient, vec![])
+        }
     };
     let html = html_receipt::generate_html(&html_receipt::HtmlReceiptData {
         receipt: rec,
@@ -415,6 +418,7 @@ fn main() -> Result<()> {
     };
     let recovery = loaded_receipt.as_ref().map(|loaded| Recovery {
         has_fingerprint: loaded.fingerprint.is_some(),
+        with_pass: loaded.receipt.pass_role == receipt::PassRole::WithPass,
     });
     let plan = plan::plan(&args, env, recovery)?;
     if let Some(loaded) = &loaded_receipt {

@@ -227,8 +227,13 @@ cannot verify the result; compare the printed fingerprint yourself. User IDs
 must not contain `:` when a receipt is written, since the receipt string is
 colon-separated.
 
-The receipt includes the public key: the armored OpenPGP public key block, or
-the `ssh-ed25519` line for an OpenSSH key. It is the same text `-k` prints.
+Receipts work for all three key types. Each includes the public key: the
+armored OpenPGP public key block, the `ssh-ed25519` line for an OpenSSH key,
+or the `age1...` recipient for an age key. It is the same text `-k` prints.
+An age key has no fingerprint, so its recipient is what recovery checks. An
+age key made without a passphrase is regenerated without one: `--from-receipt`
+does not ask, and rejects `-p` and `-e`, since any passphrase would produce a
+different key.
 This makes the receipt enough on its own for a key you keep only as a
 last-resort backup: import the public key from the receipt to encrypt to it or
 authorize it today, delete the secret key file, and regenerate the secret half

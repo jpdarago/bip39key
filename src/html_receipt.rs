@@ -1,3 +1,4 @@
+use crate::cli::OutputFormat;
 use crate::keys::DEFAULT_CREATION_TIMESTAMP;
 use crate::receipt::{PassRole, Receipt};
 use crate::types::*;
@@ -208,10 +209,10 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
     };
 
     let public_key_escaped = html_escape(data.public_key.trim_end());
-    let public_key_hint = if receipt.ssh_format {
-        "Add this line to <code>authorized_keys</code> on the machines this key should open."
-    } else {
-        "Save this block to a file and run <code>gpg --import</code> on it to encrypt to this key or verify its signatures."
+    let public_key_hint = match receipt.format {
+        OutputFormat::Pgp => "Save this block to a file and run <code>gpg --import</code> on it to encrypt to this key or verify its signatures.",
+        OutputFormat::Ssh => "Add this line to <code>authorized_keys</code> on the machines this key should open.",
+        OutputFormat::Age => "Encrypt to this key with <code>age -r</code> followed by this recipient.",
     };
 
     let version = env!("CARGO_PKG_VERSION");
@@ -245,8 +246,10 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
         Some(expires) => expires.to_string(),
     };
 
-    let key_structure = if receipt.ssh_format {
+    let key_structure = if receipt.format == OutputFormat::Ssh {
         "Ed25519 SSH key".to_string()
+    } else if receipt.format == OutputFormat::Age {
+        "X25519 age identity".to_string()
     } else {
         let mut parts = vec![if receipt.sign_auth {
             "Sign + Certify + Auth primary key"
@@ -262,10 +265,10 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
         parts.join(" + ")
     };
 
-    let fingerprint_label = if receipt.ssh_format {
-        "SSH Key Fingerprint"
-    } else {
-        "PGP Key Fingerprint"
+    let fingerprint_label = match receipt.format {
+        OutputFormat::Pgp => "PGP Key Fingerprint",
+        OutputFormat::Ssh => "SSH Key Fingerprint",
+        OutputFormat::Age => "age Recipient",
     };
 
     let needs_passphrase = matches!(receipt.pass_role, PassRole::WithPass);
@@ -276,20 +279,31 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
     };
     let passphrase_step = if needs_passphrase {
         "<li>Enter your passphrase when prompted.</li>"
+    } else if receipt.format == OutputFormat::Age {
+        // --from-receipt does not ask: an age identity cannot be encrypted,
+        // so a passphrase could only change the key.
+        "<li>You will not be asked for a passphrase: this key was made without one.</li>"
     } else {
         "<li>If asked for a password, it only encrypts the new key file and does not change the key. Leave it empty for an unencrypted file.</li>"
     };
-    let from_receipt_command = if receipt.ssh_format {
-        "bip39key --from-receipt receipt.html -o key.ssh"
-    } else {
-        "bip39key --from-receipt receipt.html -o key.gpg"
+    let from_receipt_command = match receipt.format {
+        OutputFormat::Pgp => "bip39key --from-receipt receipt.html -o key.gpg",
+        OutputFormat::Ssh => "bip39key --from-receipt receipt.html -o key.ssh",
+        OutputFormat::Age => "bip39key --from-receipt receipt.html -o identity.txt",
     };
 
     let recovery_command = html_escape(&receipt.recovery_command());
-    let import_step = if receipt.ssh_format {
-        "<li>Install the key: <code>cp key.ssh ~/.ssh/id_ed25519</code> and set permissions to 0600.</li>"
+    // The manual command cannot pass -n for an age key, so the prompt has to
+    // be left empty by hand.
+    let manual_note = if receipt.format == OutputFormat::Age && !needs_passphrase {
+        " If it asks for a password, leave it empty: any passphrase would produce a different key."
     } else {
-        "<li>Import the key: <code>gpg --import key.gpg</code></li>"
+        ""
+    };
+    let import_step = match receipt.format {
+        OutputFormat::Pgp => "<li>Import the key: <code>gpg --import key.gpg</code></li>",
+        OutputFormat::Ssh => "<li>Install the key: <code>cp key.ssh ~/.ssh/id_ed25519</code> and set permissions to 0600.</li>",
+        OutputFormat::Age => "<li>Decrypt with the identity: <code>age -d -i identity.txt FILE.age</code>. The identity file is not encrypted.</li>",
     };
 
     let build_section = build_instructions(commit);
@@ -385,7 +399,7 @@ pub fn generate_html(data: &HtmlReceiptData) -> Result<String> {
 <p>Replace <code>receipt.html</code> with the path to this file. The command reads every setting from it and checks the regenerated key against the fingerprint above, so a mistyped seed phrase or passphrase is reported instead of producing a different key.</p>
 
 <h3>Without this file</h3>
-<p>The same key, from the settings alone. Nothing is verified, so compare the printed fingerprint yourself.</p>
+<p>The same key, from the settings alone. Nothing is verified, so compare the printed fingerprint yourself.{manual_note}</p>
 <pre>{recovery_command}</pre>
 
 <h3>Step-by-step recovery</h3>
@@ -524,6 +538,11 @@ mod tests {
     }
 
     fn test_receipt(ssh: bool) -> Receipt {
+        let format = if ssh {
+            OutputFormat::Ssh
+        } else {
+            OutputFormat::Pgp
+        };
         Receipt {
             seed_format: SeedFormat::Bip39,
             pass_role: PassRole::WithPass,
@@ -532,7 +551,7 @@ mod tests {
             auth_subkey: false,
             sign_auth: false,
             just_signkey: false,
-            ssh_format: ssh,
+            format,
             created: DEFAULT_CREATION_TIMESTAMP,
             expires: None,
             user_id: "Test User <test@example.com>".to_string(),

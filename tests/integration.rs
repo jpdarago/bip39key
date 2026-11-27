@@ -2288,9 +2288,9 @@ fn public_key_from_html(html: &str) -> String {
 
 #[test]
 fn test_receipt_carries_the_public_key() {
-    // The receipt's public key is exactly what -k prints, for PGP and SSH, so
+    // The receipt's public key is exactly what -k prints, for every format, so
     // the receipt alone is enough to use the key until it must be regenerated.
-    for format_flags in [vec!["-a"], vec!["-f", "ssh"]] {
+    for format_flags in [vec!["-a"], vec!["-f", "ssh"], vec!["-f", "age"]] {
         let tmp = TempDir::new().unwrap();
         let receipt = tmp.path().join("receipt.html");
         let key = tmp.path().join("key");
@@ -2366,4 +2366,145 @@ fn test_receipt_with_altered_public_key_is_rejected() {
     let stderr = String::from_utf8_lossy(&regen.stderr);
     assert!(stderr.contains("public key in the receipt"), "{stderr}");
     assert!(!out.exists());
+}
+
+#[test]
+fn test_age_receipt_roundtrip() {
+    // An age key has no fingerprint; its recipient plays that part. The
+    // regenerated identity must be the same file, and must open a message
+    // encrypted to the recipient taken from the receipt.
+    let tmp = TempDir::new().unwrap();
+    let receipt = tmp.path().join("receipt.html");
+    let identity = tmp.path().join("identity.txt");
+    let recovered = tmp.path().join("recovered.txt");
+    run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "-f",
+            "age",
+            "-g",
+            "hkdf",
+            "-r",
+            "-p",
+            PASS,
+            "-o",
+            identity.to_str().unwrap(),
+            "--output-receipt",
+            receipt.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    let html = fs::read_to_string(&receipt).unwrap();
+    assert!(html.contains(
+        "data-bip39key-receipt=\"bip39key:1:bip39:withpass:hkdf:argon=rfc9106:format=age:"
+    ));
+    let recipient = public_key_from_html(&html);
+    assert!(recipient.starts_with("age1"), "{recipient}");
+    assert!(html.contains(&format!("data-bip39key-fingerprint=\"{recipient}\"")));
+    assert!(!html.contains("AGE-SECRET-KEY"));
+
+    let regen = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            receipt.to_str().unwrap(),
+            "-p",
+            PASS,
+            "-o",
+            recovered.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(
+        regen.status.success(),
+        "{}",
+        String::from_utf8_lossy(&regen.stderr)
+    );
+    let recovered_identity = fs::read(&recovered).unwrap();
+    assert_eq!(fs::read(&identity).unwrap(), recovered_identity);
+    assert_eq!(
+        age_round_trip(&recipient, &recovered_identity, b"break glass"),
+        b"break glass"
+    );
+
+    // The wrong passphrase gives a different key, which the receipt catches.
+    let wrong = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            receipt.to_str().unwrap(),
+            "-p",
+            "not the passphrase",
+            "-o",
+            tmp.path().join("wrong.txt").to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(!wrong.status.success());
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("Fingerprint mismatch"));
+    assert!(!tmp.path().join("wrong.txt").exists());
+}
+
+#[test]
+fn test_age_receipt_without_passphrase_takes_none() {
+    // -n does not exist for age keys, so a receipt for an age key made
+    // without a passphrase must refuse one outright: it could only change
+    // the key.
+    let tmp = TempDir::new().unwrap();
+    let receipt = tmp.path().join("receipt.html");
+    let identity = tmp.path().join("identity.txt");
+    let recovered = tmp.path().join("recovered.txt");
+    run_bip39key(
+        BIP39,
+        &userid(),
+        &[
+            "-f",
+            "age",
+            "-g",
+            "hkdf",
+            "-r",
+            "-o",
+            identity.to_str().unwrap(),
+            "--output-receipt",
+            receipt.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    let html = fs::read_to_string(&receipt).unwrap();
+    assert!(html.contains(":nopass:hkdf:argon=rfc9106:format=age:"));
+
+    let with_passphrase = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            receipt.to_str().unwrap(),
+            "-p",
+            PASS,
+            "-o",
+            recovered.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(!with_passphrase.status.success());
+    let stderr = String::from_utf8_lossy(&with_passphrase.stderr);
+    assert!(stderr.contains("made without a passphrase"), "{stderr}");
+    assert!(!recovered.exists());
+
+    let regen = run_bip39key_raw(
+        BIP39,
+        &[
+            "--from-receipt",
+            receipt.to_str().unwrap(),
+            "-o",
+            recovered.to_str().unwrap(),
+        ],
+    )
+    .unwrap();
+    assert!(
+        regen.status.success(),
+        "{}",
+        String::from_utf8_lossy(&regen.stderr)
+    );
+    assert_eq!(fs::read(&identity).unwrap(), fs::read(&recovered).unwrap());
 }
